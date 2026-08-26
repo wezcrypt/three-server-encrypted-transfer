@@ -21,9 +21,11 @@ function fail(message) {
 }
 
 function run(command, args, options = {}) {
+  const usesWindowsCommandShim = process.platform === 'win32' && /\\.cmd$/i.test(command);
   const result = spawnSync(command, args, {
     cwd: root,
     stdio: 'inherit',
+    shell: usesWindowsCommandShim,
     env: {
       ...process.env,
       PKG_CACHE_PATH: cache,
