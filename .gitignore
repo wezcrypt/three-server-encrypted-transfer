@@ -1,0 +1,38 @@
+# Dependencies and build caches / الاعتماديات وذاكرة البناء
+node_modules/
+.pkg-cache/
+
+# Runtime data and generated configuration / بيانات التشغيل والإعدادات المولدة
+data/
+three-server-runtime/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+
+# Certificates, keys, tokens, and local secrets / الشهادات والمفاتيح والرموز والأسرار المحلية
+config/certs/
+*.key
+*.key.pem
+*.p12
+*.pfx
+*.csr
+*.srl
+*.crl
+*.crl.pem
+.env
+.env.*
+!.env.example
+
+# Generated binaries and archives / الملفات التنفيذية والأرشيفات المولدة
+dist/
+*.zip
+*.tar.gz
+
+# Logs and temporary artifacts / السجلات والملفات المؤقتة
+*.log
+*.part
+coverage/
+.DS_Store
