@@ -15,12 +15,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wesam92991/three-server-encrypted-transfer.git"
+    "url": "git+https://github.com/wezcrypt/three-server-encrypted-transfer.git"
   },
   "bugs": {
-    "url": "https://github.com/wesam92991/three-server-encrypted-transfer/issues"
+    "url": "https://github.com/wezcrypt/three-server-encrypted-transfer/issues"
   },
-  "homepage": "https://github.com/wesam92991/three-server-encrypted-transfer#readme",
+  "homepage": "https://github.com/wezcrypt/three-server-encrypted-transfer#readme",
   "main": "server1-upload/index.js",
   "type": "commonjs",
   "scripts": {
