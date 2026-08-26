@@ -12,12 +12,18 @@ A security-focused reference implementation for resilient file transfer across t
 
 ## Download Connector
 
-Choose your operating system to download the ready-to-run Connector directly. No build or command is required to download it.
+Choose your operating system to download the ready-to-run Connector directly. The buttons always point to the latest published release; no build or command is required to download a file.
 
-[![Download for Windows](https://img.shields.io/badge/Download-Windows%20EXE-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/download/v1.0.0/three-server-connector-win-x64.exe)
-[![Download for Linux](https://img.shields.io/badge/Download-Linux%20x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/download/v1.0.0/three-server-connector-linux-x64)
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20EXE-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/latest/download/three-server-connector-win-x64.exe)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux%20x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/latest/download/three-server-connector-linux-x64)
 
-The download page also includes SHA-256 checksums for integrity verification and the full release notes.
+Every release includes `SHA256SUMS.txt` and full release notes. Compare the file hash with that release's published checksum before using a downloaded binary.
+
+## Windows Installation
+
+Download **Windows EXE** with the button above, then open `three-server-connector-win-x64.exe` from File Explorer, Command Prompt, or PowerShell. The executable is self-contained and does **not** require Node.js to be installed.
+
+> **Windows trust notice:** GitHub Releases and SHA-256 checksums prove where the file came from and whether it changed after publishing; they do **not** make an unsigned new EXE trusted by Smart App Control or SmartScreen. A future trusted Authenticode RSA certificate can be added to the release workflow, but the current binaries are intentionally published **without** a signature. Do not disable or bypass Windows protections to run an unfamiliar binary.
 
 ```text
 Client  ── HTTPS + Bearer ──>  Server 1: Upload  ── mTLS ──>  Server 2: Relay  ── mTLS ──>  Server 3: Storage
@@ -61,7 +67,7 @@ The system encrypts a file at the upload boundary, transfers verified ciphertext
 ### Run from source
 
 ```bash
-npm install
+npm ci
 npm run certs:dev
 npm run lint
 npm test
@@ -72,13 +78,28 @@ The development certificate generator writes local material under `config/certs/
 
 ### Build and run the connector
 
+Build both release artifacts and their checksum manifest:
+
 ```bash
 npm run build:connector
+npm run checksums
+```
+
+Build one target only when needed:
+
+```bash
+npm run build:linux
+npm run build:windows
+```
+
+Run the Linux output:
+
+```bash
 chmod +x dist/three-server-connector-linux-x64
 ./dist/three-server-connector-linux-x64
 ```
 
-On Windows x64:
+On Windows x64, open `dist\three-server-connector-win-x64.exe` from File Explorer or run it from PowerShell:
 
 ```powershell
 .\dist\three-server-connector-win-x64.exe

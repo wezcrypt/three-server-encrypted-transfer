@@ -35,6 +35,10 @@
     "connector": "node connector/index.js",
     "certs:dev": "node config/generate-dev-certs.js",
     "build:connector": "node scripts/build-connector.js",
+    "build:windows": "node scripts/build-windows.js",
+    "build:linux": "node scripts/build-linux.js",
+    "checksums": "node scripts/create-checksums.js",
+    "smoke:connector": "node scripts/smoke-connector.js",
     "audit:deps": "npm audit --omit=dev"
   },
   "engines": {
@@ -46,7 +50,9 @@
     "pino": "^9.6.0",
     "zod": "^3.24.2"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "rcedit": "^5.0.2"
+  },
   "pkg": {
     "assets": [
       "config/templates/**",

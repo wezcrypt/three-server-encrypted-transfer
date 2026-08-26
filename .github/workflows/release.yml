@@ -1,0 +1,215 @@
+name: Release Connector
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag matching package.json, for example v1.0.1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: connector-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify source on Node.js 22
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 22.13.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Generate ephemeral development mTLS certificates
+        run: npm run certs:dev
+
+      - name: Check JavaScript syntax
+        run: npm run lint
+
+      - name: Run project tests
+        run: npm test
+
+      - name: Run dedicated security tests
+        run: npm run test:security
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=low
+
+  build-windows:
+    name: Build Windows x64 Connector
+    needs: verify
+    runs-on: windows-2022
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.13.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build Windows x64 executable with version metadata
+        run: npm run build:windows
+        env:
+          PKG_CACHE_PATH: ${{ runner.temp }}\pkg-cache
+          SOURCE_DATE_EPOCH: '0'
+
+      - name: Generate ephemeral development mTLS certificates for package smoke test
+        run: npm run certs:dev
+
+      - name: Smoke-test the packaged Windows Connector and native SQLite addon
+        run: npm run smoke:connector
+
+      - name: Verify Windows artifact
+        shell: pwsh
+        run: |
+          $file = Get-Item 'dist\three-server-connector-win-x64.exe'
+          if ($file.Length -le 0) { throw 'Windows Connector executable is empty.' }
+          Write-Host "Windows artifact: $($file.Name) ($($file.Length) bytes)"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: connector-windows-x64
+          path: dist/three-server-connector-win-x64.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  build-linux:
+    name: Build Linux x64 Connector
+    needs: verify
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22.13.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build Linux x64 executable
+        run: npm run build:linux
+        env:
+          PKG_CACHE_PATH: ${{ runner.temp }}/pkg-cache
+          SOURCE_DATE_EPOCH: '0'
+
+      - name: Generate ephemeral development mTLS certificates for package smoke test
+        run: npm run certs:dev
+
+      - name: Smoke-test the packaged Linux Connector and native SQLite addon
+        run: npm run smoke:connector
+
+      - name: Verify Linux artifact
+        run: |
+          test -x dist/three-server-connector-linux-x64
+          test -s dist/three-server-connector-linux-x64
+          ls -lh dist/three-server-connector-linux-x64
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: connector-linux-x64
+          path: dist/three-server-connector-linux-x64
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js 22.13.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+
+      - name: Validate release source and version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = 'workflow_dispatch' ] && [ "${{ github.ref }}" != 'refs/heads/main' ]; then
+            echo 'Manual releases must be dispatched from main.' >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          package_version="$(node -p "require('./package.json').version")"
+          if [ "$RELEASE_TAG" != "v$package_version" ]; then
+            echo "Release tag $RELEASE_TAG must equal package version v$package_version." >&2
+            exit 1
+          fi
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: connector-windows-x64
+          path: release-assets
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: connector-linux-x64
+          path: release-assets
+
+      - name: Generate SHA-256 checksums
+        env:
+          RELEASE_ASSET_DIR: release-assets
+        run: node scripts/create-checksums.js
+
+      - name: Publish or update GitHub Release
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release-assets/* \
+              --title "Connector $RELEASE_TAG" \
+              --generate-notes
+          fi
+
+      - name: Print release assets
+        run: gh release view "$RELEASE_TAG" --json url,assets --jq '{url, assets: [.assets[] | {name, size, digest}]}'

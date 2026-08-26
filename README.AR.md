@@ -7,12 +7,18 @@
 
 ## تحميل Connector
 
-اختر نظام التشغيل لتنزيل تطبيق Connector الجاهز مباشرةً. لا تحتاج إلى بناء التطبيق أو كتابة أي أمر كي تحمّله.
+اختر نظام التشغيل لتنزيل تطبيق Connector الجاهز مباشرةً. تشير الأزرار دائماً إلى أحدث إصدار منشور؛ لا تحتاج إلى بناء التطبيق أو كتابة أي أمر كي تحمّله.
 
-[![تنزيل Windows](https://img.shields.io/badge/تنزيل-Windows%20EXE-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/download/v1.0.0/three-server-connector-win-x64.exe)
-[![تنزيل Linux](https://img.shields.io/badge/تنزيل-Linux%20x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/download/v1.0.0/three-server-connector-linux-x64)
+[![تنزيل Windows](https://img.shields.io/badge/تنزيل-Windows%20EXE-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/latest/download/three-server-connector-win-x64.exe)
+[![تنزيل Linux](https://img.shields.io/badge/تنزيل-Linux%20x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/latest/download/three-server-connector-linux-x64)
 
-تتضمن صفحة الإصدار أيضاً ملف بصمات SHA-256 للتحقق من سلامة الملفات وملاحظات الإصدار الكاملة.
+يتضمن كل إصدار ملف `SHA256SUMS.txt` وملاحظات الإصدار. قارن بصمة الملف مع البصمة المنشورة في صفحة الإصدار قبل استخدام الملف المحمل.
+
+## تثبيت Windows
+
+حمّل **Windows EXE** من الزر أعلاه، ثم افتح `three-server-connector-win-x64.exe` من File Explorer أو Command Prompt أو PowerShell. الملف مستقل ولا يتطلب تثبيت Node.js.
+
+> **تنبيه ثقة Windows:** يثبت GitHub Releases وبصمات SHA-256 مصدر الملف وسلامته بعد النشر، لكنهما لا يجعلان ملف EXE جديداً وغير موقع موثوقاً تلقائياً لدى Smart App Control أو SmartScreen. يمكن إضافة شهادة Authenticode RSA موثوقة إلى مسار الإصدار لاحقاً؛ أما الملفات الحالية فتنشر عمداً **بلا توقيع رقمي**. لا تعطّل حماية Windows ولا تتجاوزها لتشغيل ملف لا تعرف مصدره.
 
 ```text
 العميل  ── HTTPS + Bearer ──>  Server 1: Upload  ── mTLS ──>  Server 2: Relay  ── mTLS ──>  Server 3: Storage
@@ -57,7 +63,7 @@
 ### التشغيل من المصدر
 
 ```bash
-npm install
+npm ci
 npm run certs:dev
 npm run lint
 npm test
@@ -68,13 +74,28 @@ npm run test:security
 
 ### بناء وتشغيل Connector
 
+ابنِ حزم الإصدار مع ملف البصمات:
+
 ```bash
 npm run build:connector
+npm run checksums
+```
+
+ولبناء هدف واحد عند الحاجة:
+
+```bash
+npm run build:linux
+npm run build:windows
+```
+
+لتشغيل ملف Linux:
+
+```bash
 chmod +x dist/three-server-connector-linux-x64
 ./dist/three-server-connector-linux-x64
 ```
 
-في Windows x64:
+في Windows x64، افتح `dist\three-server-connector-win-x64.exe` من File Explorer أو شغّله من PowerShell:
 
 ```powershell
 .\dist\three-server-connector-win-x64.exe
