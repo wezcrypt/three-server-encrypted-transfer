@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a reproducible problem without exposing secrets or sensitive data.
+title: "[Bug]: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem. Do not include certificates, private keys, tokens, Vault credentials, real encrypted files, customer data, or exploit details. For security concerns, follow SECURITY.md instead.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the observed behavior and the expected result.
+      placeholder: A concise description of the issue.
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - Server 1 Upload
+        - Server 2 Relay
+        - Server 3 Storage
+        - Connector CLI
+        - Cryptography or key management
+        - mTLS or certificates
+        - Recovery or persistence
+        - Documentation
+        - Tests or CI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest safe and non-sensitive reproduction.
+      placeholder: |
+        1. Configure ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or output
+      description: Remove tokens, paths containing private information, certificate data, and encrypted payloads.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Node.js version, and deployment mode.
+      placeholder: Ubuntu 24.04, Node.js 22.13.0, development

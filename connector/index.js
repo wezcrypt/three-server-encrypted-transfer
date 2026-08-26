@@ -8,8 +8,59 @@ const { spawn } = require('node:child_process');
 const readline = require('node:readline/promises');
 const { stdin, stdout } = require('node:process');
 
+const UI = {
+  en: {
+    title: 'Three-Server Secure Transfer Connector',
+    selectLanguage: 'Select interface language: en (English) or ar (Arabic)',
+    languageInvalid: 'Language must be en or ar.',
+    enterValues: 'Enter deployment values. Certificate paths must be readable on this control host.',
+    runtime: 'Runtime (development/production)',
+    runtimeInvalid: 'Runtime must be development or production.',
+    workspace: 'Runtime workspace directory',
+    ca: 'Internal CA certificate path',
+    crl: 'CRL path (required in production; blank otherwise)',
+    productionCrl: 'Production requires a CRL path.',
+    bind: (id) => `${id} bind address`,
+    host: (id) => `${id} reachable DNS name or IP`,
+    port: (id) => `${id} port`,
+    cert: (id) => `${id} mTLS certificate`,
+    key: (id) => `${id} mTLS private key`,
+    storage: (id) => `${id} storage path`,
+    uploadToken: 'Server 1 upload token (blank generates a secure token)',
+    maxUpload: 'Maximum upload size (MiB)',
+    maxUploadInvalid: 'Maximum upload size must be a positive integer.',
+    started: (host, port) => `Connector started all nodes. Server 1 upload endpoint: https://${host}:${port}/upload`,
+    token: (value) => `Server 1 upload token: ${value}\nKeep this token secret. Press Ctrl+C to stop all nodes.`
+  },
+  ar: {
+    title: 'موصل النقل الآمن عبر ثلاث خوادم',
+    selectLanguage: 'اختر لغة الواجهة: en للإنجليزية أو ar للعربية',
+    languageInvalid: 'يجب أن تكون اللغة en أو ar.',
+    enterValues: 'أدخل قيم النشر. يجب أن تكون مسارات الشهادات قابلة للقراءة على جهاز التحكم.',
+    runtime: 'بيئة التشغيل (development/production)',
+    runtimeInvalid: 'يجب أن تكون بيئة التشغيل development أو production.',
+    workspace: 'مجلد مساحة عمل التشغيل',
+    ca: 'مسار شهادة CA الداخلية',
+    crl: 'مسار CRL (إلزامي في الإنتاج، واتركه فارغاً في غير ذلك)',
+    productionCrl: 'يتطلب الإنتاج مسار CRL.',
+    bind: (id) => `عنوان الربط لـ ${id}`,
+    host: (id) => `اسم DNS أو IP المتاح لـ ${id}`,
+    port: (id) => `منفذ ${id}`,
+    cert: (id) => `شهادة mTLS لـ ${id}`,
+    key: (id) => `المفتاح الخاص لـ ${id} في mTLS`,
+    storage: (id) => `مسار تخزين ${id}`,
+    uploadToken: 'رمز رفع Server 1 (اتركه فارغاً لتوليد رمز آمن)',
+    maxUpload: 'الحد الأقصى لحجم الرفع (MiB)',
+    maxUploadInvalid: 'يجب أن يكون الحد الأقصى لحجم الرفع عدداً صحيحاً موجباً.',
+    started: (host, port) => `تم تشغيل جميع العقد. عنوان رفع Server 1: https://${host}:${port}/upload`,
+    token: (value) => `رمز رفع Server 1: ${value}\nاحتفظ بهذا الرمز سرياً. اضغط Ctrl+C لإيقاف جميع العقد.`
+  }
+};
+
+function strings(language) { return UI[language] || UI.en; }
+
 function usage() {
-  stdout.write(`\nThree-Server Secure Transfer Connector\n\nUsage:\n  connector                 Interactive configuration and start\n  connector --config <file> Start from an existing connector configuration\n  connector --generate <file> Create a non-secret example configuration\n\n`);
+  stdout.write(`\nThree-Server Secure Transfer Connector / موصل النقل الآمن عبر ثلاث خوادم\n\nUsage / الاستخدام:\n  connector                 Interactive configuration and start / إعداد تفاعلي وتشغيل\n  connector --config <file> Start from an existing connector configuration / تشغيل إعداد موجود\n  connector --generate <file> Create a non-secret example configuration / إنشاء إعداد نموذجي بلا أسرار\n\n`);
 }
 
 function parseArgs(args) {
@@ -50,31 +101,34 @@ async function ask(terminal, prompt, fallback) {
 async function collectInteractive() {
   const terminal = readline.createInterface({ input: stdin, output: stdout });
   try {
-    stdout.write('\nEnter deployment values. Certificate paths must be readable on this control host.\n');
-    const runtime = await ask(terminal, 'Runtime (development/production)', 'development');
-    if (!['development', 'production'].includes(runtime)) throw new Error('Runtime must be development or production.');
-    const workspace = normalizeDirectory(await ask(terminal, 'Runtime workspace directory', './three-server-runtime'), 'Workspace directory');
-    const commonCaPath = requireFile(await ask(terminal, 'Internal CA certificate path', './config/certs/ca.cert.pem'), 'CA certificate');
-    const crlInput = await ask(terminal, 'CRL path (required in production; blank otherwise)', runtime === 'production' ? undefined : '');
+    const selected = (await ask(terminal, 'Select language / اختر اللغة (en/ar)', 'en')).toLowerCase();
+    if (!['en', 'ar'].includes(selected)) throw new Error(strings(selected).languageInvalid);
+    const text = strings(selected);
+    stdout.write(`\n${text.title}\n${text.enterValues}\n`);
+    const runtime = await ask(terminal, text.runtime, 'development');
+    if (!['development', 'production'].includes(runtime)) throw new Error(text.runtimeInvalid);
+    const workspace = normalizeDirectory(await ask(terminal, text.workspace, './three-server-runtime'), text.workspace);
+    const commonCaPath = requireFile(await ask(terminal, text.ca, './config/certs/ca.cert.pem'), text.ca);
+    const crlInput = await ask(terminal, text.crl, runtime === 'production' ? undefined : '');
     const crlPath = crlInput ? requireFile(crlInput, 'CRL') : undefined;
-    if (runtime === 'production' && !crlPath) throw new Error('Production requires a CRL path.');
+    if (runtime === 'production' && !crlPath) throw new Error(text.productionCrl);
     const node = {};
     for (const id of ['server1', 'server2', 'server3']) {
       stdout.write(`\n${id.toUpperCase()}\n`);
       node[id] = {
-        bindHost: await ask(terminal, `${id} bind address`, '0.0.0.0'),
-        publicHost: await ask(terminal, `${id} reachable DNS name or IP`, 'localhost'),
-        port: assertPort(await ask(terminal, `${id} port`, id === 'server1' ? '8443' : id === 'server2' ? '9443' : '10443'), `${id} port`),
-        certPath: requireFile(await ask(terminal, `${id} mTLS certificate`, `./config/certs/${id}.cert.pem`), `${id} certificate`),
-        keyPath: requireFile(await ask(terminal, `${id} mTLS private key`, `./config/certs/${id}.key.pem`), `${id} private key`),
-        storagePath: normalizeDirectory(await ask(terminal, `${id} storage path`, `./data/${id}`), `${id} storage path`)
+        bindHost: await ask(terminal, text.bind(id), '0.0.0.0'),
+        publicHost: await ask(terminal, text.host(id), 'localhost'),
+        port: assertPort(await ask(terminal, text.port(id), id === 'server1' ? '8443' : id === 'server2' ? '9443' : '10443'), `${id} port`),
+        certPath: requireFile(await ask(terminal, text.cert(id), `./config/certs/${id}.cert.pem`), `${id} certificate`),
+        keyPath: requireFile(await ask(terminal, text.key(id), `./config/certs/${id}.key.pem`), `${id} private key`),
+        storagePath: normalizeDirectory(await ask(terminal, text.storage(id), `./data/${id}`), `${id} storage path`)
       };
     }
-    const uploadToken = await ask(terminal, 'Server 1 upload token (blank generates a secure token)', '');
-    const maxUploadMiB = Number(await ask(terminal, 'Maximum upload size (MiB)', '1024'));
-    if (!Number.isInteger(maxUploadMiB) || maxUploadMiB < 1) throw new Error('Maximum upload size must be a positive integer.');
+    const uploadToken = await ask(terminal, text.uploadToken, '');
+    const maxUploadMiB = Number(await ask(terminal, text.maxUpload, '1024'));
+    if (!Number.isInteger(maxUploadMiB) || maxUploadMiB < 1) throw new Error(text.maxUploadInvalid);
     return {
-      runtime, workspace, commonCaPath, crlPath, node, uploadToken: uploadToken || crypto.randomBytes(32).toString('base64url'),
+      language: selected, runtime, workspace, commonCaPath, crlPath, node, uploadToken: uploadToken || crypto.randomBytes(32).toString('base64url'),
       limits: { maxUploadBytes: maxUploadMiB * 1024 * 1024, chunkSize: 8 * 1024 * 1024, requestTimeoutMs: 30000, staleTransferHours: 6 }
     };
   } finally { terminal.close(); }
@@ -82,7 +136,7 @@ async function collectInteractive() {
 
 function exampleConfig() {
   return {
-    runtime: 'development', workspace: './three-server-runtime', commonCaPath: './config/certs/ca.cert.pem',
+    language: 'en', runtime: 'development', workspace: './three-server-runtime', commonCaPath: './config/certs/ca.cert.pem',
     node: {
       server1: { bindHost: '0.0.0.0', publicHost: 'localhost', port: 8443, certPath: './config/certs/server1.cert.pem', keyPath: './config/certs/server1.key.pem', storagePath: './data/server1' },
       server2: { bindHost: '0.0.0.0', publicHost: 'localhost', port: 9443, certPath: './config/certs/server2.cert.pem', keyPath: './config/certs/server2.key.pem', storagePath: './data/server2' },
@@ -95,6 +149,8 @@ function exampleConfig() {
 
 function validateConnectorConfig(input) {
   if (!input || typeof input !== 'object') throw new Error('Connector configuration must be an object.');
+  const language = input.language || 'en';
+  if (!['en', 'ar'].includes(language)) throw new Error('Invalid language.');
   const runtime = input.runtime || 'development';
   if (!['development', 'production'].includes(runtime)) throw new Error('Invalid runtime.');
   const workspace = normalizeDirectory(input.workspace || './three-server-runtime', 'workspace');
@@ -119,7 +175,7 @@ function validateConnectorConfig(input) {
     requestTimeoutMs: Number(inputLimits.requestTimeoutMs || 30000), staleTransferHours: Number(inputLimits.staleTransferHours || 6)
   };
   if (!Number.isInteger(limits.maxUploadBytes) || !Number.isInteger(limits.chunkSize) || !Number.isInteger(limits.requestTimeoutMs) || !Number.isInteger(limits.staleTransferHours)) throw new Error('limits must be integers.');
-  return { runtime, workspace, commonCaPath, crlPath, node, uploadToken: token, limits };
+  return { language, runtime, workspace, commonCaPath, crlPath, node, uploadToken: token, limits };
 }
 
 async function writeJsonSecure(destination, value) {
@@ -186,8 +242,9 @@ async function launch(config) {
       children.push(child);
     }
   }
-  stdout.write(`\nConnector started all nodes. Server 1 upload endpoint: https://${config.node.server1.publicHost}:${config.node.server1.port}/upload\n`);
-  stdout.write(`Server 1 upload token: ${config.uploadToken}\nKeep this token secret. Press Ctrl+C to stop all nodes.\n`);
+  const text = strings(config.language);
+  stdout.write(`\n${text.started(config.node.server1.publicHost, config.node.server1.port)}\n`);
+  stdout.write(`${text.token(config.uploadToken)}\n`);
   const shutdown = () => {
     for (const child of children) {
       if (process.pkg) { clearInterval(child.recoveryTimer); child.server.close(() => child.service.close()); }

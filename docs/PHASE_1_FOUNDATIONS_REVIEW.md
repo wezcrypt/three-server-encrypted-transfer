@@ -1,39 +1,39 @@
-# Phase 1 — مراجعة الأساسات المشتركة
+# Phase 1 — Review of Common Foundations
 
-**الحالة:** مكتملة بعد مراجعة مستقلة لثوابت الحالة ومخططات الإدخال وترحيل قاعدة البيانات.
+**Status:** Completed after independent review of state constants, input schemas, and database migrations.
 
-## ما نُفذ
+## What was implemented
 
-| المكوّن | التنفيذ | ضابط الأمان |
+| Component | Implementation | Security control |
 |---|---|---|
-| آلة الحالة | حالات صريحة من `CREATED` حتى `STORED`، مع `FAILED` و`RECOVERY_PENDING` و`EXPIRED` | دالة مركزية ترفض أي انتقال غير معرّف، ومنها `FAILED → STORED` و`STORED → ENCRYPTING`. |
-| التحقق | مخططات `zod` للـ manifest والـchunk وهوية العقدة | UUIDs، حدود أحجام، hashes سداسية صحيحة، وأسماء ملفات مقيدة؛ لا تتحول أسماء المستخدمين إلى مسارات. |
-| قاعدة البيانات | SQLite/WAL مع علاقات وفهارس ومعاملات | التغييرات الحرجة تسجّل ضمن transaction، وforeign keys مفعّلة، وchunk index فريد لكل نقل. |
-| منع التعارض | التحقق من الـchunk التالي المتوقع ومعالجة idempotent للـduplicate المطابق | يمنع قفز chunks أو استبدال chunk سابق ببيانات مختلفة. |
-| قفل التشغيل | lease محدود زمنياً ومالك محدد | يمنع عاملين من معالجة النقل نفسه في الوقت ذاته. |
+| State machine | Explicit states from `CREATED` through `STORED`, plus `FAILED`, `RECOVERY_PENDING`, and `EXPIRED` | Central function that rejects any undefined transition, including `FAILED → STORED` and `STORED → ENCRYPTING`. |
+| Validation | `zod` schemas for the manifest, the chunk, and the node identity | UUIDs, size limits, correct hex hashes, and restricted filenames; usernames are not converted into paths. |
+| Database | SQLite/WAL with relations, indexes, and transactions | Critical changes recorded within transactions, foreign keys enabled, and unique chunk index per transfer. |
+| Conflict prevention | Verify the next expected chunk and idempotent handling of identical duplicates | Prevents skipping chunks or replacing a previous chunk with different data. |
+| Operational locking | Time-limited lease with a specified owner | Prevents two workers from processing the same transfer concurrently. |
 
-## المراجعة الذاتية
+## Self-review
 
-تمت مراجعة ما يلي بعقلية منفصلة عن البناء:
+The following were reviewed with a mindset separate from implementation:
 
-| بند المراجعة | النتيجة | الملاحظة |
+| Review item | Result | Note |
 |---|---|---|
-| انتقالات مستحيلة | PASS | دالة `assertTransition` هي نقطة الإنفاذ المركزية. |
-| تكرار `transfer_id` أو `file_id` | PASS | مفاتيح أساسية فريدة ورفض إدراج نقل موجود. |
-| حقن SQL | PASS | كل قيم التطبيق تمرر عبر prepared statements؛ SQL الثابت فقط في الترحيلات. |
-| path traversal | PASS | تخزين الاسم كـ metadata فقط، مع `sanitizeFilename`؛ مسارات التخزين لاحقاً ستبنى من UUID. |
-| تسريب مفاتيح | N/A | لم تبدأ طبقة مفاتيح بعد؛ لا توجد حقول مفتاح صريح في المخطط. |
-| حذف البيانات | PASS | لا توجد أي عملية حذف للـsource في هذه المرحلة. |
+| Impossible transitions | PASS | The `assertTransition` function is the central enforcement point. |
+| Duplicate `transfer_id` or `file_id` | PASS | Unique primary keys and rejection of inserting an existing transfer. |
+| SQL injection | PASS | All application values are passed through prepared statements; static SQL only in migrations. |
+| path traversal | PASS | Store the name only as metadata, with `sanitizeFilename`; storage paths will later be built from UUID. |
+| Key leakage | N/A | Key layer has not yet started; there are no explicit key fields in the schema. |
+| Data deletion | PASS | There are no deletion operations for the source at this stage. |
 
-## قائمة الاختبارات اليدوية
+## Manual test list
 
-| الاختبار | الإجراء | النتيجة المتوقعة |
+| Test | Procedure | Expected result |
 |---|---|---|
-| انتقال فاشل إلى مخزن | محاولة `FAILED → STORED` | رفض صريح وعدم تعديل الصف. |
-| chunk خارج الترتيب | إرسال index 2 قبل 0 | رفض صريح مع بقاء العداد صفراً. |
-| chunk مكرر مطابق | إعادة إرسال chunk verified بنفس hash | استجابة idempotent من دون زيادة العداد. |
-| chunk مكرر متعارض | إعادة index نفسه مع hash آخر | رفض صريح. |
-| اسم مسار خبيث | `../../secrets.txt` كاسم ملف | يحفظ كاسم metadata آمن فقط ولا يحدد مساراً. |
-| إعادة فتح القاعدة | إنهاء العملية ثم فتح SQLite نفسها | تبقى حالات النقل والـchunks قائمة. |
+| Failed → Stored transition | Attempt `FAILED → STORED` | Explicit rejection and no row modification. |
+| Out-of-order chunk | Send index 2 before 0 | Explicit rejection with counter remaining zero. |
+| Identical duplicate chunk | Re-send a verified chunk with the same hash | Idempotent response without incrementing the counter. |
+| Conflicting duplicate chunk | Re-send the same index with a different hash | Explicit rejection. |
+| Malicious path name | `../../secrets.txt` as filename | Saved only as safe metadata name and does not determine a path. |
+| Reopen the database | Terminate the process then reopen SQLite itself | Transfer states and chunks remain present. |
 
-> **قرار المتابعة:** تمر الأساسات المشتركة مراجعة Phase 1. ستبدأ Phase 2 بإنشاء DEK عشوائي وتشفير AES-GCM متدفق، من دون نقل DEK إلى أي عقدة بعيدة.
+> **Decision to proceed:** The common foundations pass Phase 1 review. Phase 2 will begin by creating a random DEK and streaming AES-GCM encryption, without transferring the DEK to any remote node.

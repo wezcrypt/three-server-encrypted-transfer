@@ -1,87 +1,98 @@
-# Three-Server Encrypted Transfer / نظام نقل ملفات مشفّر عبر ثلاث خوادم
+# Three-Server Encrypted Transfer
 
-A production-oriented reference implementation for encrypted, resumable file transfer across **Server 1 (Upload) → Server 2 (Relay) → Server 3 (Storage)**. It uses envelope encryption, AES-256-GCM, chunk integrity checks, mutual TLS, a durable state machine, and conservative recovery rules.
+[![English](https://img.shields.io/badge/Language-English-2563eb)](README.md)
+[![العربية](https://img.shields.io/badge/اللغة-العربية-0f766e)](README.AR.md)
 
-تنفيذ مرجعي عملي لنقل ملفات مشفّرة وقابلة للاستئناف عبر **Server 1 (الرفع) → Server 2 (الترحيل) → Server 3 (التخزين)**. يستخدم تشفيراً مغلفاً، وAES-256-GCM، والتحقق من سلامة الـchunks، وmTLS، وآلة حالات دائمة، وقواعد تعافٍ محافظة تمنع فقدان البيانات.
+[![Node.js](https://img.shields.io/badge/Node.js-22.13%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Security model](https://img.shields.io/badge/Security-Envelope%20Encryption-0f766e)](docs/SECURITY.md)
+[![Transport](https://img.shields.io/badge/Transport-mTLS-2563eb)](docs/ARCHITECTURE.md)
+[![Status](https://img.shields.io/badge/Status-Reference%20Implementation-f59e0b)](docs/FINAL_SECURITY_AUDIT.md)
 
-> **Security status / الحالة الأمنية:** The final security review marks this repository **not production-ready until the documented operational HIGH finding and remaining staging tests are resolved**. Read [`docs/FINAL_SECURITY_AUDIT.md`](docs/FINAL_SECURITY_AUDIT.md) before deployment.
-> يبيّن تقرير التدقيق الأمني النهائي أن الحزمة **غير جاهزة للنشر الإنتاجي** قبل معالجة النتيجة التشغيلية عالية الخطورة والاختبارات المتبقية في بيئة staging. راجع [`docs/FINAL_SECURITY_AUDIT.md`](docs/FINAL_SECURITY_AUDIT.md) قبل النشر.
-
-## Architecture / المعمارية
+A security-focused reference implementation for resilient file transfer across three isolated services. Use the language buttons above to switch between the complete English and Arabic project guides.
 
 ```text
-Client -- HTTPS + Bearer --> Server 1 -- mTLS --> Server 2 -- mTLS --> Server 3
-                                |                 |                 |
-                        plaintext + DEK      ciphertext only    ciphertext only
-                        Vault access         no key access      no key access
+Client  ── HTTPS + Bearer ──>  Server 1: Upload  ── mTLS ──>  Server 2: Relay  ── mTLS ──>  Server 3: Storage
+                                      │                                           │                           │
+                               plaintext + DEK                             ciphertext only             ciphertext only
+                               Vault Transit access                         no key access                no key access
 ```
 
-| Component / المكوّن | English | العربية |
-|---|---|---|
-| Server 1 — Upload | Receives a streaming upload, generates a per-file DEK, encrypts without a plaintext temporary file, and sends ciphertext to Relay. | يستقبل الرفع المتدفق، وينشئ DEK فريداً لكل ملف، ويشفّر بلا ملف plaintext مؤقت، ثم يرسل ciphertext إلى Relay. |
-| Server 2 — Relay | Accepts ciphertext only from Server 1 through mTLS, verifies every chunk, and relays it to final storage. | يستقبل ciphertext فقط من Server 1 عبر mTLS، ويتحقق من كل chunk، ثم يرحّلها إلى التخزين النهائي. |
-| Server 3 — Storage | Verifies the complete ciphertext hash and stores chunks under `files/<fileId>`. | يتحقق من hash الكامل للـciphertext ويخزن الـchunks تحت `files/<fileId>`. |
-| Connector | Interactive CLI that collects node addresses, ports, certificates, and storage paths; it generates configs and launches all nodes for a co-located development deployment. | واجهة CLI تفاعلية تجمع عناوين العقد ومنافذها وشهاداتها ومسارات التخزين؛ تنشئ الإعدادات وتشغّل العقد في نشر تطويري مشترك الموقع. |
+The system encrypts a file at the upload boundary, transfers verified ciphertext in chunks, and stores only ciphertext at the final destination. It is designed around explicit trust boundaries, authenticated encryption, mutual TLS, durable transfer state, and conservative crash recovery.
 
-## Repository layout / بنية المستودع
+> **Important:** This repository is public for review and development. It is **not production-ready** until the open operational findings and staging tests in the [final security audit](docs/FINAL_SECURITY_AUDIT.md) are completed. Do not deploy development certificates, development keys, or sample configuration values to a production environment.
 
-| Path / المسار | Contents / المحتوى |
+## Highlights
+
+| Capability | Implementation |
 |---|---|
-| `server1-upload/` | HTTPS upload API, streaming encryption, envelope-key handling, and recovery. / API الرفع وتشفير streaming وإدارة مفاتيح التغليف والتعافي. |
-| `server2-relay/` | mTLS-only ciphertext relay and chunk verification. / ترحيل ciphertext عبر mTLS والتحقق من الـchunks. |
-| `server3-storage/` | Final ciphertext storage and complete hash verification. / التخزين النهائي للـciphertext والتحقق من hash الكامل. |
-| `shared/` | Cryptography, validation, state machine, SQLite, mTLS, logging, and recovery helpers. / التشفير والتحقق وآلة الحالات وSQLite وmTLS والسجلات والتعافي. |
-| `connector/` | Unified bilingual CLI source. / مصدر واجهة CLI الموحدة. |
-| `docs/` | Architecture, deployment, key-management, and security-review documents. / وثائق المعمارية والنشر والمفاتيح والتدقيق الأمني. |
-| `tests/` | Unit, integration, and security tests. / اختبارات الوحدة والتكامل والأمان. |
-| `dist/` | Built Linux x64 connector and Windows x64 executable. / تطبيق الربط المبني للينكس وملف Windows التنفيذي. |
+| Per-file encryption | A fresh 256-bit Data Encryption Key (DEK) is generated for every file and used with AES-256-GCM. |
+| Envelope encryption | Server 1 wraps DEKs with HashiCorp Vault Transit in production; Server 2 and Server 3 never receive plaintext keys. |
+| Secure service transport | Internal service-to-service calls require TLS 1.3, client certificates, CA validation, application-level node identity checks, and a CRL in production. |
+| Chunk integrity | Every encrypted chunk is hashed and verified. The complete ciphertext hash is verified again at final storage. |
+| Durable recovery | SQLite-backed transfer state, idempotent manifest handling, resumable chunks, leases, and cautious stale-transfer cleanup. |
+| Least plaintext exposure | Plaintext exists only as a stream inside Server 1. No plaintext temporary file, decrypt endpoint, or key provider exists in Server 2 or Server 3. |
+| Operator tooling | A cross-platform connector CLI collects node settings, writes protected local configuration, and starts a co-located development topology. |
 
-## Quick start / بدء سريع
+## Repository layout
 
-### Source development / تطوير المصدر
+| Path | Purpose |
+|---|---|
+| `server1-upload/` | HTTPS upload API, streaming encryption, key wrapping, and transfer recovery. |
+| `server2-relay/` | mTLS-only ciphertext relay with manifest and chunk verification. |
+| `server3-storage/` | Final ciphertext storage with full-hash verification. |
+| `shared/` | Cryptography, validation, SQLite persistence, mTLS, observability, state, and recovery utilities. |
+| `connector/` | Cross-platform operator CLI source. |
+| `config/` | Development-only certificate generator. |
+| `migrations/` | Durable SQLite schema migration. |
+| `tests/` | Unit, integration, recovery, mTLS, and security tests. |
+| `docs/` | Architecture, deployment, key-management, and security documentation. |
+
+## Quick start
+
+### Run from source
 
 ```bash
 npm install
 npm run certs:dev
+npm run lint
 npm test
 npm run test:security
-npm run build:connector
 ```
 
-The development certificate generator is local-only. Do **not** use development certificates or the environment-based key provider in production.
+The development certificate generator writes local material under `config/certs/`, which is intentionally ignored by Git. Never reuse those certificates in production.
 
-مولد شهادات التطوير محلي فقط. **لا** تستخدم شهادات التطوير أو مزود المفاتيح القائم على environment في الإنتاج.
-
-### Connector binaries / تطبيق الربط المعبأ
-
-**Linux x64 / لينكس x64**
+### Build and run the connector
 
 ```bash
+npm run build:connector
 chmod +x dist/three-server-connector-linux-x64
 ./dist/three-server-connector-linux-x64
 ```
 
-**Windows x64 / ويندوز x64**
+On Windows x64:
 
 ```powershell
 .\dist\three-server-connector-win-x64.exe
 ```
 
-The CLI asks for each server’s address, port, mTLS certificate, private key, CA/CRL path, and storage path. It validates the entries, generates protected node configuration files, and starts the three services automatically for a co-located deployment.
+The interactive connector validates the CA and CRL locations, node addresses, ports, mTLS certificates, private keys, storage paths, upload limits, and runtime profile. It then creates protected node configuration files and starts all three services for a **co-located development deployment**.
 
-تطلب واجهة CLI عنوان ومنفذ وشهادة mTLS والمفتاح الخاص ومسار CA/CRL ومسار التخزين لكل خادم. ثم تتحقق من القيم، وتنشئ ملفات إعداد محمية، وتشغّل الخدمات الثلاث تلقائياً في النشر المشترك الموقع.
+## Production deployment
 
-## Production requirements / متطلبات الإنتاج
+Production must use three independently operated nodes or service accounts, with Server 1 able to reach Server 2 and Server 2 able to reach Server 3. Server 2 and Server 3 must not expose their internal endpoints to the public internet.
 
-| Requirement / المتطلب | English | العربية |
-|---|---|---|
-| Key management | Server 1 must use HashiCorp Vault Transit: `RUNTIME_ENV=production` and `KEY_PROVIDER=vault`. | يجب أن يستخدم Server 1 ‏HashiCorp Vault Transit مع `RUNTIME_ENV=production` و`KEY_PROVIDER=vault`. |
-| Certificate revocation | A current CRL is mandatory for production configuration. | CRL محدثة إلزامية لإعدادات الإنتاج. |
-| Network isolation | Permit only Server 1 → Server 2 and Server 2 → Server 3 on internal ports. | اسمح فقط بـServer 1 → Server 2 وServer 2 → Server 3 على المنافذ الداخلية. |
-| Separate nodes | Deploy each server on a separate VPS or service account. | انشر كل خادم في VPS أو حساب خدمة منفصل. |
-| Readiness | Complete the open items in the final audit before production. | أكمل البنود المفتوحة في تقرير التدقيق النهائي قبل الإنتاج. |
+| Requirement | Production expectation |
+|---|---|
+| Key provider | `RUNTIME_ENV=production` and `KEY_PROVIDER=vault` on Server 1 only. |
+| Certificate revocation | A current CRL is mandatory for every node configuration. |
+| Access control | Use an application-layer upload token or equivalent authenticated edge control for Server 1. |
+| Network policy | Permit only Server 1 → Server 2 and Server 2 → Server 3 on internal service ports. |
+| Secret handling | Use a secret manager or service-account environment. Never commit private keys, tokens, Vault credentials, or generated configuration. |
+| Validation | Complete the operational fixes and all pre-production tests listed in the final security audit. |
 
-## Verification / التحقق
+For the complete procedure, read [Deployment](docs/DEPLOYMENT.md), [Key Management](docs/KEY_MANAGEMENT.md), and [Security](docs/SECURITY.md).
+
+## Verification
 
 ```bash
 npm run lint
@@ -90,21 +101,23 @@ npm run test:security
 npm audit --omit=dev --audit-level=low
 ```
 
-The final local verification completed with **15 project tests passing**, **3 security tests passing**, and **0 audited dependency vulnerabilities** on 26 August 2026.
+The documented final local verification recorded 15 project tests passing, 3 dedicated security tests passing, and no audited production dependency vulnerabilities. Re-run the commands in your own environment before every release.
 
-اكتمل التحقق المحلي النهائي بنجاح **15 اختباراً للمشروع** و**3 اختبارات أمنية**، مع **0 ثغرات في الاعتماديات المدققة** بتاريخ 26 أغسطس 2026.
+## Documentation
 
-## Documentation / الوثائق
+| Document | Description |
+|---|---|
+| [Architecture](docs/ARCHITECTURE.md) | Trust boundaries, data flow, APIs, storage layout, and recovery model. |
+| [Security](docs/SECURITY.md) | Security controls, threat model, incident response, and non-negotiable production settings. |
+| [Key Management](docs/KEY_MANAGEMENT.md) | DEK lifecycle, Vault Transit configuration, key rotation, and development-mode limitations. |
+| [Deployment](docs/DEPLOYMENT.md) | VPS topology, certificate handling, systemd guidance, firewall rules, and production checklist. |
+| [Final Security Audit](docs/FINAL_SECURITY_AUDIT.md) | Findings, readiness decision, required fixes, and pre-production test plan. |
+| [Phase Reviews](docs/) | Build and review records for each implementation phase. |
 
-- [Architecture / المعمارية](docs/ARCHITECTURE.md)
-- [Security / الأمان](docs/SECURITY.md)
-- [Key Management / إدارة المفاتيح](docs/KEY_MANAGEMENT.md)
-- [Deployment / النشر](docs/DEPLOYMENT.md)
-- [Final Security Audit / تقرير التدقيق الأمني النهائي](docs/FINAL_SECURITY_AUDIT.md)
-- [Phase Reviews / مراجعات المراحل](docs/)
+## Community and contribution
 
-## License / الترخيص
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request, and follow the expectations in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Security-sensitive reports must follow [SECURITY.md](SECURITY.md) rather than public issue disclosure. The repository includes structured issue and pull-request templates to keep public discussion useful and to avoid accidental disclosure of sensitive material.
 
-No license has been selected for this repository. Choose an appropriate license before publishing a reusable public project.
+## License
 
-لم يُحدد ترخيص لهذا المستودع. اختر ترخيصاً مناسباً قبل نشر مشروع عام قابل لإعادة الاستخدام.
+No open-source license has been selected yet. All rights are reserved unless and until the repository owner adds a license file.

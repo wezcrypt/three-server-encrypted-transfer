@@ -1,47 +1,47 @@
 # Phase 4 — Server 1 Upload + Encryption
 
-**الحالة:** مكتمل على مستوى خادم الرفع. اختبار النقل الكامل سيجري بعد اكتمال Server 2 وServer 3 في Phase 6.
+**Status:** Complete at the upload server level. Full transfer testing will be performed after Server 2 and Server 3 are completed in Phase 6.
 
-## مسار التنفيذ
+## Execution path
 
-| الخطوة | التنفيذ | ضمان الأمان أو الاعتمادية |
+| Step | Implementation | Security or Reliability Guarantee |
 |---|---|---|
-| 1 | `POST /upload` يستقبل body متدفقاً عبر HTTPS | لا يُقرأ body كاملاً في الذاكرة. |
-| 2 | حد `Content-Length` وحد تشفير داخلي `maxPlaintextBytes` | يرفض ملفاً أكبر من الحصة حتى عند غياب أو تزوير Content-Length. |
-| 3 | يولد `fileId` و`transferId` عشوائيين وDEK جديداً | لا تستخدم أسماء المستخدم أو IDs متوقعة لمسار التخزين. |
-| 4 | ينشئ صف `ENCRYPTING` دائماً ثم يشفّر إلى ciphertext محلي فقط | crash أثناء التشفير قابل للرصد والاسترداد؛ لا ينشأ plaintext temp file. |
-| 5 | يخزن DEK مغلفاً في قاعدة Server 1 فقط | لا يدخل في manifest البعيد ولا في جسم طلب Relay. |
-| 6 | يرسل manifest مصغراً ثم ciphertext chunks إلى Server 2 عبر mTLS | Server 2 لا يستقبل filename أو content type أو plaintext size أو wrapped DEK. |
-| 7 | يحذف ciphertext المؤقت فقط عند `STORED` الصريح من Relay | لا توجد أي عملية حذف للـplaintext المصدر؛ يفوق ذلك القاعدة الذهبية تحفظاً. |
+| 1 | `POST /upload` accepts a streaming body over HTTPS | The body is not read fully into memory. |
+| 2 | Enforce `Content-Length` and internal encryption limit `maxPlaintextBytes` | Rejects a file larger than the quota even if Content-Length is missing or forged. |
+| 3 | Generates random `fileId` and `transferId` and a new DEK | Storage paths do not use predictable usernames or IDs. |
+| 4 | Always creates an `ENCRYPTING` queue entry then encrypts to local ciphertext only | Crashes during encryption are detectable and recoverable; no plaintext temp file is created. |
+| 5 | Stores the wrapped DEK in Server 1's database only | It is not included in the remote manifest nor in the Relay request body. |
+| 6 | Sends a minimized manifest then ciphertext chunks to Server 2 over mTLS | Server 2 does not receive the filename, content type, plaintext size, or wrapped DEK. |
+| 7 | Deletes the temporary ciphertext only upon explicit `STORED` from the Relay | There is no deletion of the source plaintext; this is even more conservative than the golden "no delete before confirmation" rule. |
 
-## واجهات Server 1
+## Server 1 Interfaces
 
-| Endpoint | المصادقة | السلوك |
+| Endpoint | Authentication | Behavior |
 |---|---|---|
-| `POST /upload` | Bearer token في الإنتاج؛ اختياري محلياً للتطوير | يشفر الملف ويكمل النقل أو يعيد حالة فشل/انتظار بلا حذف للمصدر. |
-| `GET /transfers/:transferId` | Bearer token في الإنتاج | يعيد ID والحالة فقط؛ لا يعيد metadata حساسة أو مفاتيح. |
+| `POST /upload` | Bearer token in production; optional locally for development | Encrypts the file and continues the transfer or returns a failed/pending status without deleting the source. |
+| `GET /transfers/:transferId` | Bearer token in production | Returns only the ID and status; does not return sensitive metadata or keys. |
 
-## مراجعة ذاتية
+## Self-review
 
-| بند | النتيجة |
+| Item | Result |
 |---|---|
-| تشفير streaming بلا plaintext temp | PASS |
-| حد حجم ضمن stream وليس في header فقط | PASS |
-| تشفير DEK ومحو buffer من الذاكرة بعد الاستخدام | PASS |
-| عدم إرسال wrapped DEK أو filename إلى Relay | PASS |
-| endpoint داخلي يستخدم HTTPS/mTLS حصراً | PASS |
-| حذف ciphertext مشروط بـ`STORED` فقط | PASS |
-| حذف plaintext مصدر | لا يوجد في التطبيق؛ PASS |
-| فحص الصياغة والاختبارات الحالية | PASS: `npm run lint && npm test` (9/9) |
+| Streaming encryption without plaintext temp files | PASS |
+| Stream-level size limit, not header-only | PASS |
+| DEK encrypted and memory buffer wiped after use | PASS |
+| Do not send wrapped DEK or filename to Relay | PASS |
+| Internal endpoint uses HTTPS/mTLS exclusively | PASS |
+| Ciphertext deletion conditioned on explicit `STORED` only | PASS |
+| Source plaintext deletion | Not present in the application; PASS |
+| Lint and current tests | PASS: `npm run lint && npm test` (9/9) |
 
-## اختبارات يدوية لاحقة
+## Manual follow-up tests
 
-| الاختبار | النتيجة المتوقعة |
+| Test | Expected result |
 |---|---|
-| رفع 1 بايت أقل من الحد | `201 STORED` بعد تشغيل Relay وStorage. |
-| رفع فوق الحد بلا Content-Length | `413 UPLOAD_TOO_LARGE` وحذف ciphertext الجزئي فقط. |
-| Relay غير متاح | `502` وحالة محلية `FAILED`؛ لا حذف للـsource ولا ciphertext الكامل القابل للاستئناف. |
-| token مفقود في production | `401 UNAUTHORIZED` قبل قراءة body. |
-| filename من نوع path traversal | لا يستخدم أبداً في مسار التخزين؛ يكمن فقط في DB Server 1 بشكل منقح. |
+| Upload 1 byte under the limit | `201 STORED` after Relay and Storage are running. |
+| Upload over the limit without Content-Length | `413 UPLOAD_TOO_LARGE` and only partial ciphertext deleted. |
+| Relay unavailable | `502` and local status `FAILED`; no deletion of the source nor of the resumable full ciphertext. |
+| Missing token in production | `401 UNAUTHORIZED` before reading the body. |
+| Path-traversal filename | Never used in storage path; stored only in Server 1 DB in sanitized form. |
 
-> **ملاحظة تشغيلية:** لأن الـplaintext يأتي مباشرة من العميل ولا يحتفظ التطبيق بنسخة مصدرية، فالقاعدة «لا حذف قبل تأكيد» تتحقق بنيوياً: لا يوجد حذف plaintext من قبل Server 1 من الأصل.
+> **Operational note:** Because the plaintext comes directly from the client and the application does not retain a source copy, the "no delete before confirmation" rule holds structurally: Server 1 does not delete the plaintext in the first place.

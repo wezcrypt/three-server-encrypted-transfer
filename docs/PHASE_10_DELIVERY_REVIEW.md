@@ -1,28 +1,28 @@
 # Phase 10 — Documentation, Deployment, Connector
 
-**الحالة:** مكتملة؛ تنتقل الحزمة إلى المراجعة الأمنية النهائية للأقسام 1–21.
+**Status:** Completed; the package moves to the final security review for Sections 1–21.
 
-## تسليمات Phase 10
+## Phase 10 Deliverables
 
-| التسليم | المسار | التحقق |
+| Deliverable | Path | Verification |
 |---|---|---|
-| كود Server 1 | `server1-upload/index.js` | مشمول في اختبارات التكامل، التشفير، والاستئناف. |
-| كود Server 2 | `server2-relay/index.js` | مشمول في mTLS/replay/e2e. |
-| كود Server 3 | `server3-storage/index.js` | مشمول في e2e والتحقق النهائي. |
-| تطبيق الربط | `connector/index.js` | CLI تفاعلي يجمع بيانات العقد الثلاث، ينشئ configs ويشغلها تلقائياً. |
-| Linux binary | `dist/three-server-connector-linux-x64` | ELF x86_64؛ تم اختباره بـ`--help` و`--generate` وإطلاق العقد الفعلي. |
-| Windows binary | `dist/three-server-connector-win-x64.exe` | PE32+ x64؛ يحزم ملحق SQLite Windows x64، ويتطلب اختبار تشغيل أخير على Windows مستهدف قبل production. |
-| المعمارية | `docs/ARCHITECTURE.md` | يحدد حدود الثقة والمسارات وواجهات الشبكة. |
-| الأمان | `docs/SECURITY.md` | يحدد الضوابط ونموذج التهديد والحوادث. |
-| المفاتيح | `docs/KEY_MANAGEMENT.md` | يحدد Vault/development/key rotation. |
-| النشر | `docs/DEPLOYMENT.md` | يحدد VPS/systemd/Firewall/checklist production. |
+| Server 1 code | `server1-upload/index.js` | Included in integration, crypto, and resume tests. |
+| Server 2 code | `server2-relay/index.js` | Included in mTLS/replay/e2e. |
+| Server 3 code | `server3-storage/index.js` | Included in e2e and final verification. |
+| Connector app | `connector/index.js` | Interactive CLI that gathers the three nodes' data, generates configs, and launches them automatically. |
+| Linux binary | `dist/three-server-connector-linux-x64` | ELF x86_64; tested with `--help` and `--generate` and launching the actual nodes. |
+| Windows binary | `dist/three-server-connector-win-x64.exe` | PE32+ x64; packages the SQLite Windows x64 addon, and requires a final run test on the target Windows before production. |
+| Architecture | `docs/ARCHITECTURE.md` | Defines trust boundaries, paths, and network interfaces. |
+| Security | `docs/SECURITY.md` | Specifies controls, threat model, and incidents. |
+| Keys | `docs/KEY_MANAGEMENT.md` | Specifies Vault/development/key rotation. |
+| Deployment | `docs/DEPLOYMENT.md` | Specifies VPS/systemd/Firewall/production checklist. |
 
-## ضمان تطبيق الربط
+## Connector Application Guarantee
 
-> بعد إدخال العنوان والمنفذ والشهادات والمفتاح ومسار التخزين لكل عقدة والضغط على متابعة CLI، لا يطلب التطبيق إعداداً يدوياً إضافياً. يتحقق من الملفات، ينشئ three node configs، يشغّل Server 3 ثم Server 2 ثم Server 1، ويشغل منطق التشفير والمصادقة والاستئناف المضمن في الخوادم تلقائياً.
+> After entering the address, port, certificates, key, and storage path for each node and pressing Continue in the CLI, the application does not request any additional manual setup. It validates the files, generates three-node configs, starts Server 3 then Server 2 then Server 1, and runs the encryption, authentication, and resume logic embedded in the servers automatically.
 
-في بيئة source، يشغّل Connector ثلاث عمليات Node. في binary المعبأ، يشغّل العقد الثلاث داخل العملية المعبأة نفسها لتوافق Windows/Linux. في production الموزع على VPS منفصلة، يُوزع source/binary لكل عقدة وفق `DEPLOYMENT.md` وتبقى بيانات الاتصال والـmTLS متطابقة.
+In a source environment, the Connector runs three Node processes. In the packaged binary, it runs the three nodes inside the same bundled process for Windows/Linux compatibility. In distributed production on separate VPSs, the source/binary is deployed to each node per `DEPLOYMENT.md` and the connection data and mTLS remain identical.
 
-## ملاحظة تشغيلية مهمة
+## Important operational note
 
-يتحقق الـLinux binary فعلياً في هذا التسليم. لا يمكن تشغيل PE32+ داخل بيئة Linux الحالية؛ لذلك يبقى اختبار acceptance على Windows x64 بنداً مطلوباً قبل نشر production، لا عيباً مكتشفاً في source code. الملحق المدمج له ABI Node 22 Windows x64 المطابق للـbinary.
+The Linux binary is actually verified in this delivery. PE32+ cannot be executed in the current Linux environment; therefore acceptance testing on Windows x64 remains a required item before production deployment, this is not a defect found in the source code. The bundled addon has the Node 22 Windows x64 ABI matching the binary.

@@ -1,43 +1,43 @@
-# Phase 2 — طبقة التشفير وإدارة المفاتيح
+# Phase 2 — Encryption Layer and Key Management
 
-**حالة البناء:** مكتملة.
-**حالة المراجعة الأمنية المستقلة:** تنتقل الآن إلى نقطة التدقيق الإلزامية للأقسام 3 و4 من الدليل.
+**Build status:** Complete.
+**Independent security review status:** Now moving to the mandatory audit checkpoint for Sections 3 and 4 of the guide.
 
-## التصميم المنفذ
+## Implemented design
 
-| المجال | التنفيذ | خاصية الأمان |
+| Area | Implementation | Security property |
 |---|---|---|
-| DEK | 32 بايت عشوائية من `crypto.randomBytes` لكل ملف | لا يُعاد استخدام مفتاح بيانات بين الملفات. |
-| تشفير المحتوى | AES-256-GCM | سرية وسلامة موثقتان من المكتبة القياسية، من دون خوارزمية مخصصة. |
-| إطار الـchunk | `IV(12) || Tag(16) || Ciphertext` | كل سجل نقل يملك IV وauthentication tag مستقلين. |
-| IV | prefix عشوائي 8 بايت + `chunkIndex` 4 بايت | IV فريد لكل chunk ضمن DEK واحد؛ الحد الأقصى المفروض للـchunks أقل كثيراً من المجال المتاح. |
-| AAD | file ID وtransfer ID وindex وطول plaintext وإصدار المخطط | يمنع تبديل chunks أو نقلها بين ملفات أو transfers مختلفة. |
-| تغليف DEK | Vault Transit في الإنتاج، ومزوّد تطوير محلي منفصل | لا ينتقل DEK أو Master Key إلى Server 2/3 أو ضمن الملف. |
-| فشل مزوّد المفاتيح | وقت مهلة ورفض الاستجابة غير الصحيحة | Vault غير المتاح أو المفتاح الخاطئ يمنع عملية التشفير أو فك التشفير؛ لا يوجد fallback صامت. |
+| DEK | 32 random bytes from `crypto.randomBytes` per file | Data encryption key is not reused between files. |
+| Content encryption | AES-256-GCM | Confidentiality and integrity are authenticated by the standard library, with no custom algorithm. |
+| Chunk frame | `IV(12) || Tag(16) || Ciphertext` | Each transfer record has independent IV and authentication tag. |
+| IV | 8-byte random prefix + `chunkIndex` 4 bytes | IV unique per chunk within a single DEK; the imposed maximum for chunks is much smaller than the available space. |
+| AAD | file ID, transfer ID, index, plaintext length, and schema version | Prevents swapping chunks or moving them between different files or transfers. |
+| DEK wrapping | Vault Transit in production, and a separate local development provider | DEK or Master Key does not move to Server 2/3 or within the file. |
+| Key provider failure | Timeouts and rejection on incorrect responses | Unavailable Vault or wrong key prevents encryption or decryption; there is no silent fallback. |
 
-## قائمة الاختبارات المنفذة
+## List of executed tests
 
-| الاختبار | الحالة | الدليل |
+| Test | Status | Evidence |
 |---|---|---|
-| تشفير ثم فك تشفير record بالمعلومات المطابقة | PASS | اختبار وحدة `AES-256-GCM record decrypts only with matching context`. |
-| تغيير chunk index في AAD | PASS | فشل التحقق من GCM. |
-| تعديل بايت ciphertext | PASS | فشل `decipher.final()` ولا يخرج plaintext موثوق. |
-| IV فريد لكل chunk | PASS | اختبار تقارن IV لــindex 0 و1. |
-| فحص الصياغة وتشغيل جميع الاختبارات | PASS | `npm run lint && npm test` في 26 أغسطس 2026. |
+| Encrypt then decrypt a record with matching context | PASS | Unit test `AES-256-GCM record decrypts only with matching context`. |
+| Change chunk index in AAD | PASS | GCM verification fails. |
+| Modify a ciphertext byte | PASS | `decipher.final()` fails and does not yield trusted plaintext. |
+| Unique IV per chunk | PASS | Test comparing IV for index 0 and 1. |
+| Lint and run all tests | PASS | `npm run lint && npm test` on 26 August 2026. |
 
-## قائمة الاختبارات اليدوية المطلوبة
+## List of required manual tests
 
-| الاختبار | الإجراء | النتيجة المقبولة |
+| Test | Procedure | Acceptable result |
 |---|---|---|
-| تدوير مفتاح Vault | تشفير ملف بمفتاح Transit ثم تدوير المفتاح وفك DEK القديم | فك ناجح فقط حسب سياسة Vault، مع استمرار key version في metadata. |
-| غياب Vault | تعطيل الوصول إلى `VAULT_ADDR` خلال التغليف | فشل الطلب وعدم إنشاء manifest صالح أو نقل ملف. |
-| نمط الإنتاج مع مزود development | تشغيل `RUNTIME_ENV=production` و`KEY_PROVIDER=development` | توقف العملية قبل فتح منفذ الشبكة. |
-| تسريب سجل | البحث في سجل تشغيل فاشل | لا يظهر `MASTER_KEY_B64` أو `VAULT_TOKEN` أو `wrappedDek` أو DEK. |
-| تكرار IV متعمد | محاولة تمرير index يتجاوز المجال أو prefix غير صالح | رفض صريح، ولا يُستخدم IV مكرر. |
+| Rotate Vault key | Encrypt a file with the Transit key then rotate the key and decrypt the old DEK | Decryption succeeds only per Vault policy, with the key version retained in metadata. |
+| Vault unavailable | Disable access to `VAULT_ADDR` during wrapping | Request fails and no valid manifest or file transfer is created. |
+| Production mode with development provider | Run `RUNTIME_ENV=production` and `KEY_PROVIDER=development` | Process exits before opening the network port. |
+| Log leakage | Inspect logs of a failed run | No `MASTER_KEY_B64` or `VAULT_TOKEN` or `wrappedDek` or DEK appears. |
+| Deliberate IV reuse | Attempt to pass an index that exceeds the range or an invalid prefix | Explicit rejection, and no repeated IV is used. |
 
-> **ضابط لا يقبل التنازل:** `MASTER_KEY_B64` مقبول في بيئة تطوير معزولة فقط. أي تشغيل إنتاجي يفرض `KEY_PROVIDER=vault`، ويجب أن تكون بيانات اعتماد Vault موجودة في Server 1 فقط.
+> **Non-negotiable requirement:** `MASTER_KEY_B64` is acceptable only in an isolated development environment. Any production run mandates `KEY_PROVIDER=vault`, and Vault credentials must be present on Server 1 only.
 
-## مراجع
+## References
 
 [1] [Node.js Crypto: authenticated encryption](https://nodejs.org/api/crypto.html)
 [2] [NIST SP 800-38D: GCM and GMAC](https://csrc.nist.gov/pubs/sp/800/38/d/final)

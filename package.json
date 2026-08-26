@@ -2,7 +2,25 @@
   "name": "three-server-encrypted-transfer",
   "version": "1.0.0",
   "private": true,
-  "description": "Three-node encrypted file transfer system with envelope encryption and mTLS.",
+  "description": "Resilient three-node encrypted file transfer with envelope encryption, chunk verification, and mutual TLS.",
+  "keywords": [
+    "encryption",
+    "file-transfer",
+    "mutual-tls",
+    "mtls",
+    "envelope-encryption",
+    "aes-gcm",
+    "vault",
+    "secure-storage"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wesam92991/three-server-encrypted-transfer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wesam92991/three-server-encrypted-transfer/issues"
+  },
+  "homepage": "https://github.com/wesam92991/three-server-encrypted-transfer#readme",
   "main": "server1-upload/index.js",
   "type": "commonjs",
   "scripts": {

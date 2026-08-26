@@ -1,29 +1,29 @@
-# تدقيق مركز — عزل البيانات الصريحة بين العقد
+# Central Audit — Explicit Plaintext Isolation Between Nodes
 
-**نطاق المراجعة:** `server1-upload/` و`server2-relay/` و`server3-storage/` و`shared/validation.js` وطبقة قاعدة البيانات، بالإضافة إلى اختبار النقل الكامل.
-**قاعدة المراجعة:** لم يُعدّل كود خلال جلسة التدقيق.
-**الحكم:** PASS؛ لا توجد نتيجة CRITICAL أو HIGH أو MEDIUM مفتوحة في نطاق عزل plaintext.
+**Scope of review:** `server1-upload/` and `server2-relay/` and `server3-storage/` and `shared/validation.js` and the database layer, plus the end-to-end transfer test.
+**Review basis:** Code was not modified during the audit session.
+**Verdict:** PASS; no CRITICAL, HIGH, or MEDIUM findings are open within the plaintext isolation scope.
 
-## التحقق الفعلي
+## Practical verification
 
-| مسار محتمل لتسرب plaintext أو مفتاح | Server 2 | Server 3 | النتيجة |
+| Potential path for plaintext or key leakage | Server 2 | Server 3 | Result |
 |---|---|---|---|
-| body requests | يستقبل AES-GCM records فقط | يستقبل AES-GCM records فقط | PASS |
-| wrapped DEK | مخطط remote يرفضه؛ DB تسجله `NULL` | مخطط remote يرفضه؛ DB تسجله `NULL` | PASS |
-| DEK/Master Key/Vault | لا يستورد `key-provider` ولا أي فك تشفير | لا يستورد `key-provider` ولا أي فك تشفير | PASS |
-| أسماء الملفات | يستبدل محلياً بـ`opaque-<fileId>` | يستبدل محلياً بـ`opaque-<fileId>` | PASS |
-| نوع المحتوى وحجم plaintext | لا يُرسل في remote manifest | لا يُرسل في remote manifest | PASS |
-| نظام الملفات | chunks تحت UUID/index فقط | chunks دائمة تحت `files/<fileId>/chunks` | PASS |
-| logs/errors | لا توجد طباعة body أو مفاتيح أو filename | لا توجد طباعة body أو مفاتيح أو filename | PASS |
-| metadata وقاعدة البيانات | لا يوجد wrapped DEK؛ metadata اسم placeholder | لا يوجد wrapped DEK؛ metadata اسم placeholder | PASS |
-| endpoint فك التشفير | غير موجود | غير موجود | PASS |
+| body requests | Receives only AES-GCM records | Receives only AES-GCM records | PASS |
+| wrapped DEK | remote schema rejects it; DB records it `NULL` | remote schema rejects it; DB records it `NULL` | PASS |
+| DEK/Master Key/Vault | Does not import `key-provider` or any decryption | Does not import `key-provider` or any decryption | PASS |
+| Filenames | Replaces locally with `opaque-<fileId>` | Replaces locally with `opaque-<fileId>` | PASS |
+| Content-type and plaintext size | Not sent in the remote manifest | Not sent in the remote manifest | PASS |
+| Filesystem | chunks under UUID/index only | persistent chunks under `files/<fileId>/chunks` | PASS |
+| logs/errors | No printing of body, keys, or filename | No printing of body, keys, or filename | PASS |
+| metadata and database | No wrapped DEK; metadata filename is a placeholder | No wrapped DEK; metadata filename is a placeholder | PASS |
+| Decryption endpoint | Not present | Not present | PASS |
 
-## أدلة الاختبار
+## Test evidence
 
-اختبار التكامل الكامل أكد عملياً أن Server 1 وحده يحتوي `wrapped_dek`، بينما كلا العقدتين البعيدتين تحفظان `NULL`. كما أرسل الاختبار filename خبيثاً `../sensitive.txt` وتحقق من أن Relay يحفظ فقط `opaque-<fileId>`، وأن ciphertext المخزن في Server 3 مختلف عن المصدر. وقد نجح الاختبار في 26 أغسطس 2026.
+The full integration test practically confirmed that only Server 1 holds `wrapped_dek`, while both remote nodes store `NULL`. The test also sent a malicious filename `../sensitive.txt` and verified that the Relay stored only `opaque-<fileId>`, and that the ciphertext stored on Server 3 differed from the source. The test succeeded on 26 August 2026.
 
-## ملاحظات البحث الساكن
+## Static analysis notes
 
-الفحص الساكن في كل من `server2-relay/index.js` و`server3-storage/index.js` لم يجد استدعاءات `unwrapDek` أو `decryptChunk` أو `createDecipheriv` أو متغيرات `MASTER_KEY` أو `VAULT_*` أو `wrappedDek`. المطابقة الوحيدة لـ`originalFilename` هي إنشاء placeholder اصطناعي من `fileId` بعد أن يمر manifest المقيد بالتحقق.
+Static inspection of both `server2-relay/index.js` and `server3-storage/index.js` did not find calls to `unwrapDek` or `decryptChunk` or `createDecipheriv`, nor variables `MASTER_KEY` or `VAULT_*` or `wrappedDek`. The only match for `originalFilename` is the creation of an artificial placeholder from `fileId` after the restricted manifest passes validation.
 
-> **قرار المتابعة:** العزل البنيوي للـplaintext سليم. لا يمتلك Server 2 أو Server 3 القدرة البرمجية أو بيانات الاعتماد أو metadata اللازمة لفك تشفير الملف. يمكن الانتقال إلى Phase 7 للاستئناف والتعافي من الأعطال.
+> **Decision to proceed:** The structural isolation of plaintext is sound. Neither Server 2 nor Server 3 possesses the code capability, credentials, or metadata necessary to decrypt the file. May proceed to Phase 7 for resumption and recovery from failures.

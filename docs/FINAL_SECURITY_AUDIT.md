@@ -1,114 +1,114 @@
-# تقرير المراجعة الأمنية
+# Security Review Report
 
-## الملخص التنفيذي
+## Executive Summary
 
-**المخاطر الإجمالية: HIGH**
-**الجاهزية للإنتاج: غير جاهز**
+**Overall risk: HIGH**
+**Production readiness: Not ready**
 
-راجعت المراجعة النهائية source code، config، migrations، endpoints، state machine، التشفير، mTLS، logging، tests، binaries، ووثائق التشغيل. اجتازت اختبارات المشروع **15/15**، اجتازت الاختبارات الأمنية **3/3**، ونتيجة `npm audit --omit=dev --audit-level=low` هي **0 vulnerabilities** في 26 أغسطس 2026. لا توجد نتيجة Critical مفتوحة. يبقى النشر الإنتاجي غير جاهز لوجود نقطة عالية واحدة متعلقة بتشغيل تطبيق الربط على VPS منفصلة، ونقطتين متوسطتين متعلقتين بذرية filesystem/database واختبار Windows.
+I reviewed the final artifacts: source code, config, migrations, endpoints, state machine, encryption, mTLS, logging, tests, binaries, and operational documentation. The project tests passed **15/15**, the security tests passed **3/3**, and the result of `npm audit --omit=dev --audit-level=low` is **0 vulnerabilities** on 26 August 2026. There are no open Critical findings. Production deployment remains not ready due to one High finding related to bootstrapping the connector application on separate VPSes, and two Medium findings related to filesystem/database atomicity and Windows testing.
 
-## نتائج حرجة (Critical)
+## Critical findings (Critical)
 
-لا توجد نتائج Critical مفتوحة. لم أجد مساراً يجعل Server 2 أو Server 3 يفك ciphertext أو يصل إلى DEK/Master Key، ولم أجد إعادة استخدام IV مع DEK واحد، أو تعطيل `rejectUnauthorized`، أو حذف ciphertext المؤكد قبل `STORED`.
+There are no open Critical findings. I did not find a path that would allow Server 2 or Server 3 to decrypt ciphertext or access the DEK/Master Key, nor reuse an IV with a single DEK, nor disable `rejectUnauthorized`, nor delete confirmed ciphertext before `STORED`.
 
-## نتائج عالية (High)
+## High findings (High)
 
-1. **[HIGH] تطبيق الربط لا يوفّر bootstrap عن بعد إلى ثلاث VPS مستقلة بلا قناة إدارة موثقة.**
-   - **الموقع:** `connector/index.js`، الدالة `launch`، ووثيقة `DEPLOYMENT.md`.
-   - **المشكلة:** binary المعبأ يشغّل العقد الثلاث محلياً داخل عملية واحدة لأغراض التشغيل المحلي/التجريبي. أما topology الإنتاجية المطلوبة، حيث كل عقدة في VPS مستقلة، فتتطلب توزيع source أو binary/config لكل VPS حسب deployment guide. لا توجد في التطبيق قناة SSH/mTLS إدارة أو agent موثقة تستطيع نسخ الملف، تثبيت service، وبدء العملية عن بعد اعتماداً على عنوان/port/الشهادة فقط.
-   - **الأثر:** قد يعتقد المشغل أن إدخال عناوين VPS في Connector يكفي للنشر البعيد، فينتهي بتشغيل غير مقصود محلياً أو topology غير معزولة. هذا خطر معماري وتشغيلي، لا كشف plaintext مباشر.
-   - **سيناريو الاستغلال:** تشغيل Connector على جهاز إداري مع hosts خارجية لا يثبت أو يبدأ خدمة في VPS المستهدفة؛ قد تُشغّل عملية co-located غير متوافقة مع سياسة العزل.
-   - **الإصلاح المقترح:** أضف قناة bootstrap آمنة منفصلة تعتمد SSH بمفاتيح حسابات خدمة مقيدة أو agent إدارة mTLS مثبت مسبقاً على كل VPS، مع بصمة host key، allow-list، ومراجعة confirmation قبل تنفيذ النشر. بديل آمن: غلّف لكل VPS binary/config مخصصاً واستعمل Ansible/Terraform/CI محكوم.
+1. **[HIGH] The connector application does not provide remote bootstrap to three independent VPSes via a documented management channel.**
+   - **Location:** `connector/index.js`, function `launch`, and the document `DEPLOYMENT.md`.
+   - **Issue:** The packaged binary runs the three nodes locally within a single process for local/experimental operation. The intended production topology—where each node runs on an independent VPS—requires distributing source or binary/config to each VPS per the deployment guide. The application does not provide a documented management channel (SSH/mTLS) or an agent capable of copying the file, installing the service, and starting the process remotely based solely on address/port/certificate.
+   - **Impact:** An operator may assume that entering VPS addresses into the Connector is sufficient for remote deployment, resulting in unintended local execution or a non-isolated topology. This is an architectural/operational risk rather than direct plaintext disclosure.
+   - **Exploitation scenario:** Running the Connector on an administrative host with external hosts listed does not install or start the service on the target VPSes; instead a co-located process may run that violates isolation policies.
+   - **Proposed fix:** Add a separate secure bootstrap channel that relies on SSH with constrained service-account keys or a preinstalled mTLS management agent on each VPS, with host-key fingerprint validation, an allow-list, and a confirmation review before executing deployment. A safe alternative: produce per-VPS packaged binary/config and use Ansible/Terraform/CI-driven pipelines.
 
-## نتائج متوسطة (Medium)
+## Medium findings (Medium)
 
-1. **[MEDIUM] لا توجد معاملة ذرية واحدة تشمل fsync للملف وSQLite عبر نظام الملفات.**
-   - **الموقع:** `shared/http-utils.js` و`shared/database.js` وعمليات حفظ chunks.
-   - **المشكلة:** كتابة chunk تعمل `fsync` ثم تسجل DB في transaction، وهو ترتيب سليم لتجنب تأكيد chunk غير مكتوب، لكنه لا يحقق atomic transaction عابرة لنظام الملفات وقاعدة البيانات.
-   - **الأثر:** انقطاع طاقة ضمن نافذة ضيقة قد يترك ملفاً موجوداً بلا صف DB أو صفاً لا يطابق ملفاً بعد عطل filesystem؛ الاستئناف يعالج أغلب الحالات لكنه يحتاج validation على reboot.
-   - **سيناريو الاستغلال:** crash بعد كتابة/rename وقبل commit أو في عطل filesystem.
-   - **الإصلاح المقترح:** أضف startup reconciliation يمسح/يعزل orphan files ويعيد hash للـchunks الموثقة قبل الاستئناف، واستخدم directory fsync بعد rename عند المنصات الداعمة.
+1. **[MEDIUM] There is no single atomic transaction that includes file fsync and SQLite across the filesystem.**
+   - **Location:** `shared/http-utils.js` and `shared/database.js` and chunk save operations.
+   - **Issue:** The chunk write performs an `fsync` and then records the DB transaction, which is the correct ordering to avoid confirming an unwritten chunk, but it does not provide an atomic transaction that spans the filesystem and the database.
+   - **Impact:** A power loss during a narrow window may leave a file present without a DB row, or a DB row that does not match an actual file after a filesystem failure; resume handles most cases but requires validation on reboot.
+   - **Exploitation scenario:** Crash after write/rename and before commit, or during a filesystem failure.
+   - **Proposed fix:** Add startup reconciliation that removes/isolates orphan files and re-hashes chunks documented in the DB before resuming, and use a directory fsync after rename on platforms that support it.
 
-2. **[MEDIUM] لم يُنفذ اختبار acceptance فعلي لملف exe على Windows x64.**
-   - **الموقع:** `dist/three-server-connector-win-x64.exe`.
-   - **المشكلة:** البيئة الحالية Linux فقط. تحققت البنية PE32+ وأُدرج ملحق SQLite Windows Node 22 x64، لكن لم ينفذ lifecycle حقيقي على Windows.
-   - **الأثر:** احتمال مشكلة runtime/ACL أو native addon على Windows لا تظهر في اختبار Linux.
-   - **سيناريو الاستغلال:** ليس استغلالاً مباشراً؛ خطر تشغيل وتهيئة قد يجعل service غير متاح أو يطبق permissions غير متوقعة.
-   - **الإصلاح المقترح:** نفّذ CI acceptance على Windows Server/Windows 11 x64: `--generate`، `--config`، health، upload صغير، واختبر ACL للـconfig والشهادات.
+2. **[MEDIUM] No actual acceptance test was executed for the Windows x64 exe.**
+   - **Location:** `dist/three-server-connector-win-x64.exe`.
+   - **Issue:** The current environment is Linux-only. The PE32+ build and the inclusion of the Windows SQLite Node 22 x64 addon were verified, but a real Windows lifecycle was not executed.
+   - **Impact:** Potential runtime/ACL/native addon issues on Windows may not surface in Linux testing.
+   - **Exploitation scenario:** Not a direct exploit; runtime/installation/permission issues may cause the service to be unavailable or apply unexpected permissions.
+   - **Proposed fix:** Run CI acceptance on Windows Server / Windows 11 x64: exercise `--generate`, `--config`, health checks, a small upload, and test ACLs for config and certificates.
 
-## نتائج منخفضة (Low)
+## Low findings (Low)
 
-1. **[LOW] المثال غير التفاعلي يحتاج مراجعة token قبل التشغيل.**
-   - **الموقع:** `connector/index.js`، `exampleConfig`.
-   - **المشكلة:** ملف `--generate` يحمل placeholder توضيحياً لـupload token؛ إذا استعمله المشغل كما هو يمكن أن يكون token متوقعاً.
-   - **الأثر:** ضعف مصادقة Server 1 في development أو production إذا لم يعدّل المثال.
-   - **الإصلاح المقترح:** استبدال placeholder بتوليد token عشوائي عند تحميل المثال أو رفض القيمة المعروفة. **الحالة: CLOSED**؛ أصبحت القيمة `__GENERATE_SECURE_TOKEN_AT_RUNTIME__` مولداً صريحاً لـ32-byte token عشوائي عند تحميل config، ولا تعد token قابلة للاستعمال بحد ذاتها.
+1. **[LOW] The non-interactive example requires token review before execution.**
+   - **Location:** `connector/index.js`, `exampleConfig`.
+   - **Issue:** The `--generate` file contains an illustrative placeholder for the upload token; if an operator uses it as-is the token may be predictable.
+   - **Impact:** Weak authentication of Server 1 in development or production if the example is not modified.
+   - **Proposed fix:** Replace the placeholder with runtime generation of a random token when loading the example, or reject the known value. **Status: CLOSED**; the value `__GENERATE_SECURE_TOKEN_AT_RUNTIME__` is now an explicit generator for a 32-byte random token at config load, and the token value is not usable by itself.
 
-## مراجعة التشفير
+## Encryption review
 
 Encryption: PASS
 Key Management: PASS
 Nonce/IV handling: PASS
 Authentication tags: PASS
 
-يستخدم التطبيق AES-256-GCM القياسي مع DEK 32 بايت عشوائي لكل ملف. الـIV يتكون من prefix عشوائي 8 بايت مع index 32 بت، وAAD يربط الـrecord بالملف والتحويل والترتيب والطول. اختبارات العبث وAAD الخاطئ وIV مختلف ناجحة. يُفرض Vault في production ويُرفض مزود development؛ لا يتوفر key provider في Server 2/3.
+The application uses standard AES-256-GCM with a 32-byte random DEK per file. The IV consists of an 8-byte random prefix with a 32-bit index, and AAD binds the record to the file, rotation, sequence, and length. Tampering tests, wrong-AAD tests, and differing-IV tests succeeded. Vault is enforced in production and the development provider is rejected; no key provider is available on Server 2/3.
 
-## مراجعة mTLS / PKI
+## mTLS / PKI review
 
 mTLS: PASS
 Certificate validation: PASS
 Identity verification: PASS
 Rotation: PASS
 
-تفرض الاتصالات الداخلية TLS 1.3 وشهادة client وCA وتحقق `rejectUnauthorized=true`. يتحقق التطبيق أيضاً من CN/SAN للدور. يرفض الإنتاج الإقلاع في غياب CRL، ويفحص private-key mode في POSIX. ما زال يلزم اختبار CRL حقيقية وrenewal في بيئة production.
+Internal connections enforce TLS 1.3, require client certificate and CA, and set `rejectUnauthorized=true`. The application also verifies CN/SAN for role. Production refuses to boot without a CRL, and checks private-key mode on POSIX. Real CRL and renewal tests in a production-like environment are still required.
 
-## مراجعة فقدان البيانات
+## Data loss review
 
 Source deletion safety: PASS
 Resume: PASS
 Crash recovery: PASS
 
-لا ينشئ Server 1 plaintext temp file ولا يملك حذفاً للمصدر. يحذف ciphertext المؤقت فقط بعد رد `STORED` النهائي. Relay لا يحذف chunks قبل تأكيد Storage. اختبار Storage unavailable ثم recovery ناجح ويثبت بقاء ciphertext قبل التأكيد. تبقى نتيجة filesystem/DB reconciliation المتوسطة أعلاه مطلوبة لتحمل power-loss المتطرف.
+Server 1 does not create plaintext temporary files nor delete the source. It only deletes temporary ciphertext after the final `STORED` reply. The relay does not delete chunks before storage confirmation. The test of Storage unavailable and subsequent recovery succeeded and demonstrates that ciphertext persists prior to confirmation. The medium filesystem/DB reconciliation item above remains required for extreme power-loss tolerance.
 
-## مراجعة الاسترجاع
+## Recovery review
 
-Download security: PASS (غير معرّض؛ لا يوجد endpoint retrieval في هذا الإصدار)
-Key authorization: PASS (لا يوجد decrypt API خارجي)
+Download security: PASS (not exposed; there is no retrieval endpoint in this release)
+Key authorization: PASS (no external decrypt API)
 Plaintext isolation: PASS
 
-حجب retrieval مقصود في الإصدار الحالي لتجنب فتح مسار فك تشفير من دون طبقة هوية وملكية/تفويض. يجب أن يمر أي endpoint استرجاع مستقبلي بتصميم وتدقيق مستقلين.
+Blocking retrieval is intentional in this release to avoid opening a decryption path without an identity and ownership/authorization layer. Any future retrieval endpoint must undergo independent design and audit.
 
-## مراجعة الـ Dependencies
+## Dependencies review
 
-`npm audit --omit=dev --audit-level=low` أعاد **found 0 vulnerabilities**. الاعتماديات التشغيلية هي `better-sqlite3` و`pino` و`zod` و`@yao-pkg/pkg`. يلزم تثبيت الإصدارات عبر lockfile وتشغيل audit في CI قبل كل نشر؛ لا ترق الحزم تلقائياً من دون اختبار binary/native addon.
+`npm audit --omit=dev --audit-level=low` returned **found 0 vulnerabilities**. Operational dependencies are `better-sqlite3`, `pino`, `zod`, and `@yao-pkg/pkg`. Use a lockfile to pin versions and run audit in CI before each release; do not automatically bump packages without testing binary/native addons.
 
-## مشاكل معمارية
+## Architectural issues
 
-المشكلة المعمارية الأساسية المفتوحة هي أن واجهة التحكم لا تملك remote deployment channel آمنة إلى VPS منفصلة. الخوادم نفسها قابلة للنشر منفصلة طبقاً للدليل، لكن شرط "زر واحد" لنشرها عن بعد يتطلب credentials/agent لم يقدمه المستخدم ولا يجوز افتراضه. كذلك لا يقدم الإصدار مسار استرجاع plaintext، وهو قرار تقليل سطح هجوم وليس خللاً.
+The primary open architectural issue is that the control interface does not have a secure remote deployment channel to independent VPSes. The servers themselves can be deployed separately according to the guide, but a "one-button" remote deployment requires credentials/agents that are not provided and must not be assumed. The release also does not provide a plaintext retrieval path, which is a deliberate attack-surface reduction rather than a defect.
 
-## الإصلاحات المطلوبة (مرتبة حسب الأولوية)
+## Required fixes (ranked by priority)
 
-1. تنفيذ remote bootstrap موثق ومقيد (SSH/agent mTLS) أو اعتماد pipeline بنية تحتية رسمي لتشغيل ثلاث VPS مستقلة من واجهة واحدة.
-2. إجراء Windows x64 acceptance test فعلي للـexe، بما في ذلك ACL وnative SQLite lifecycle.
-3. تطبيق startup filesystem/SQLite reconciliation وdirectory fsync حيث يتوفر.
-4. إجراء اختبار CRL ملغاة وVault policy/rotation واختبار تحميل في production-like staging.
+1. Implement documented and constrained remote bootstrap (SSH / mTLS agent) or adopt an official infrastructure pipeline to run the three VPSes independently from a single interface.
+2. Execute an actual Windows x64 acceptance test for the exe, including ACL checks and native SQLite lifecycle.
+3. Implement startup filesystem/SQLite reconciliation and directory fsync where available.
+4. Perform CRL revocation tests, Vault policy/rotation, and a production-like staging load/test.
 
-## اختبارات أمنية مطلوبة قبل الإنتاج
+## Security tests required before production
 
-| الاختبار | الحالة |
+| Test | Status |
 |---|---|
-| e2e encryption + plaintext isolation | PASS محلياً. |
-| mTLS identity mismatch | PASS محلياً. |
-| replay conflicting manifest | PASS محلياً. |
-| path traversal وchunk validation | PASS محلياً. |
-| outage + resume | PASS محلياً. |
-| Windows binary acceptance | مطلوب. |
-| Vault Transit with production policy | مطلوب. |
-| CRL revocation on live certificate | مطلوب. |
-| 10/50/90% network cut وpower-loss filesystem test | مطلوب. |
-| load/flood/quota stress test | مطلوب. |
-| remote three-VPS deployment exercise | مطلوب. |
+| e2e encryption + plaintext isolation | PASS locally. |
+| mTLS identity mismatch | PASS locally. |
+| replay conflicting manifest | PASS locally. |
+| path traversal and chunk validation | PASS locally. |
+| outage + resume | PASS locally. |
+| Windows binary acceptance | Required. |
+| Vault Transit with production policy | Required. |
+| CRL revocation on live certificate | Required. |
+| 10/50/90% network cut and power-loss filesystem test | Required. |
+| load/flood/quota stress test | Required. |
+| remote three-VPS deployment exercise | Required. |
 
-## الحكم النهائي
+## Final verdict
 
-**غير جاهز للإنتاج** حتى تعالج نتيجة High الخاصة بـremote bootstrap وتنفذ اختبارات Windows/Vault/CRL/تحمل production المذكورة. الكود الحالي مناسب لتجارب تطويرية وللنشر المنضبط يدوياً على ثلاث عقد وفق `DEPLOYMENT.md` بعد تنفيذ ضوابط production.
+**Not production ready** until the High finding concerning remote bootstrap is addressed and Windows/Vault/CRL/production-tolerance tests are executed. The current code is suitable for development experiments and for manual controlled deployment to three nodes per `DEPLOYMENT.md` after implementing production controls.

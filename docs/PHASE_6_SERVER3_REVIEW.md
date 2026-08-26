@@ -1,32 +1,32 @@
 # Phase 6 — Server 3 Final Storage
 
-**الحالة:** مكتملة. تم تشغيل اختبار تكامل كامل من Server 1 إلى Server 2 إلى Server 3 بنجاح.
+**Status:** Complete. A full integration test was run from Server 1 to Server 2 to Server 3 successfully.
 
-## التنفيذ
+## Implementation
 
-| المجال | التنفيذ | الضابط |
+| Area | Implementation | Guard |
 |---|---|---|
-| قبول Storage | mTLS بهوية متوقعة `server2` فقط | لا يستطيع Server 1 أو عميل خارجي الكتابة مباشرة إلى Storage. |
-| metadata | manifest ضيق لا يحتوي plaintext metadata أو DEK مغلف | Storage لا يملك ما يلزم لفك التشفير أو معرفة اسم المستخدم. |
-| موقع التخزين | `files/<fileId>/chunks/<index>.chunk` | لا يوجد filename مستخدم؛ المسار مبني من UUID تم التحقق منه. |
-| التحقق | SHA-256 لكل chunk، وترتيب متسلسل، ثم SHA-256 للـciphertext المجمع | لا يعد `STORED` قبل التحقق الكامل. |
-| التأكيد | يحدّث قاعدة بياناته إلى `STORED` ويرجع `storageKey` فقط بعد التحقق | Relay لا يحذف نسخته قبل التأكيد النهائي. |
-| تكرار الطلب | manifest أو chunk مكرر مطابق idempotent؛ المتعارض مرفوض | لا تتسبب retries في تلف أو تبديل ملف. |
+| Storage acceptance | mTLS with expected identity `server2` only | Server 1 or an external client cannot write directly to Storage. |
+| metadata | Tight manifest containing no plaintext metadata or wrapped DEK | Storage lacks the information required to decrypt or determine the username. |
+| Storage location | `files/<fileId>/chunks/<index>.chunk` | No filename is used; the path is derived from a verified UUID. |
+| Verification | SHA-256 per chunk, sequential ordering, then SHA-256 of the assembled ciphertext | Not marked `STORED` before full verification. |
+| Confirmation | Updates its database to `STORED` and returns the `storageKey` only after verification | Relay does not delete its copy before final confirmation. |
+| Retry behavior | Repeated identical manifest or chunk is idempotent; conflicting ones are rejected | Retries do not corrupt or swap the file. |
 
-## اختبار التكامل المنفذ
+## Executed integration test
 
-نفذ الاختبار `end-to-end transfer stores only ciphertext on Server 2 and Server 3` في 26 أغسطس 2026. استخدم ملفاً عشوائياً بحجم 2.5 MB وأرسل raw body إلى `POST /upload` في Server 1، ثم تحقق من البنود التالية:
+Ran the test `end-to-end transfer stores only ciphertext on Server 2 and Server 3` on 26 August 2026. Used a random file of size 2.5 MB and sent the raw body to `POST /upload` on Server 1, then verified the following items:
 
-| التحقق | النتيجة |
+| Verification | Result |
 |---|---|
-| استجابة Server 1 | `201` و`status=STORED`. |
-| حالة قواعد البيانات | Server 1 وServer 2 وServer 3 جميعاً `STORED`. |
-| wrapped DEK | موجود في Server 1 فقط؛ `NULL` في Server 2 وServer 3. |
-| التخزين النهائي | storage key يطابق `files/<fileId>` فقط. |
-| المحتوى النهائي | ciphertext مختلف عن المصدر العشوائي؛ لا تخزين plaintext. |
-| نسخة Relay | مجلد temporary Relay حُذف بعد تأكيد Storage. |
-| الاسم المرسل | `../sensitive.txt` لم يظهر في Relay؛ سجل Relay فقط `opaque-<fileId>`. |
+| Server 1 response | `201` and `status=STORED`. |
+| Database states | Server 1, Server 2, and Server 3 all `STORED`. |
+| wrapped DEK | Present only on Server 1; `NULL` on Server 2 and Server 3. |
+| Final storage | storage key matches `files/<fileId>` only. |
+| Final content | ciphertext differs from the random source; no plaintext stored. |
+| Relay copy | Relay temporary folder was deleted after Storage confirmation. |
+| Submitted filename | `../sensitive.txt` did not appear in the Relay; the Relay logged only `opaque-<fileId>`. |
 
-بعد إصلاح تهيئة سجل ترحيلات SQLite ليُنشأ قبل أول استعلام، نجحت اختبارات التكامل الأربع كاملةً.
+After fixing SQLite Relay log initialization to be created before the first query, all four integration tests passed.
 
-> **قرار المتابعة:** يكتمل الآن الحد البنيوي للبيانات الصريحة: Server 1 هو العقدة الوحيدة التي تتعامل مع plaintext وDEK. تبدأ المراجعة المستقلة لعزل plaintext حسب القسم 2 من الدليل.
+> **Follow-up decision:** The structural boundary for plaintext data is now complete: Server 1 is the only node that handles plaintext and DEK. An independent review to isolate plaintext begins per Section 2 of the guide.

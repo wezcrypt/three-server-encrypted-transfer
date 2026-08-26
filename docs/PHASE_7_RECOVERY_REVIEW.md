@@ -1,41 +1,41 @@
-# Phase 7 — الاستئناف والتعافي من الأعطال
+# Phase 7 — Resume and Failure Recovery
 
-**الحالة:** مكتملة. أضيفت عمليات استئناف تلقائية وعامل تنظيف محافظ قابل للتهيئة؛ وأثبت اختبار تكامل انقطاع الوجهة سلامة تسلسل الحذف.
+**Status:** Completed. Automatic resume operations and a configurable garbage-collecting reconciler were added; an integration test for destination interruption proved delete-order safety.
 
-## منطق الاستئناف
+## Resume logic
 
-| الحالة | السلوك عند إعادة التشغيل أو إعادة المحاولة | مصير البيانات |
+| State | Behavior on restart or retry | Data disposition |
 |---|---|---|
-| `ENCRYPTING` | يبقى draft دائماً؛ بعد timeout يصبح `FAILED`، وتحذف فقط `.part` القديمة | لا يوجد plaintext temp؛ لا تُحذف بيانات مؤكدة. |
-| `ENCRYPTED` أو `RELAY_RECEIVING` | Server 1 يرسل manifest مطابقاً ويبدأ من `nextChunk` المؤكد لدى Relay | يبقى ciphertext المحلي حتى `STORED`. |
-| `FAILED` | انتقال ذري `FAILED → RECOVERY_PENDING → المرحلة المطلوبة` | لا يتم تحويله إلى STORED مباشرة. |
-| Relay/Storage stale | يتحولان إلى `RECOVERY_PENDING` ويحتفظان بالـchunks verified | يعيد Server 1 تنشيط النقل من manifest المطابق. |
-| `.part` قديم | عامل دوري يحذفه بعد `staleTransferHours` (الافتراضي 6 ساعات) | لا يحذف `.bin` مكتمل في Server 1 أو chunks verified أو Storage مؤكد. |
-| `STORED` | terminal/idempotent | لا تعديل أو حذف عبر عامل التنظيف. |
+| `ENCRYPTING` | draft always remains; after timeout becomes `FAILED`, and only the old `.part` is deleted | No temp plaintext; confirmed data is not deleted. |
+| `ENCRYPTED` or `RELAY_RECEIVING` | Server 1 sends the matching manifest and resumes from the `nextChunk` confirmed by Relay | local ciphertext remains until `STORED`. |
+| `FAILED` | atomic transition `FAILED → RECOVERY_PENDING → target stage` | Not promoted directly to STORED. |
+| Relay/Storage stale | they transition to `RECOVERY_PENDING` and retain verified chunks | Server 1 reactivates the transfer from the matching manifest. |
+| old `.part` | a periodic worker deletes it after `staleTransferHours` (default 6 hours) | does not delete a completed `.bin` on Server 1, verified chunks, or confirmed Storage. |
+| `STORED` | terminal/idempotent | not modified or deleted by the cleaner. |
 
-## اختبار فشل الوجهة المنفذ
+## Executed destination-failure test
 
-نفذ الاختبار `Server 1 resumes a failed transfer after Storage returns without deleting ciphertext early` بالتسلسل التالي:
+The test `Server 1 resumes a failed transfer after Storage returns without deleting ciphertext early` was executed in the following sequence:
 
-| الخطوة | النتيجة |
+| Step | Result |
 |---|---|
-| تشغيل Server 1 وServer 2 مع Storage غير متاح | رفع الملف يعيد `502` وحالة Server 1 تصبح `FAILED`. |
-| فحص Server 1 | ملف ciphertext النهائي `.bin` ما زال موجوداً. |
-| تشغيل Server 3 لاحقاً | لا يلزم تدخل يدوي في chunks أو metadata. |
-| استدعاء عامل الاستئناف | يعيد manifest، ويتجاوز chunks التي يؤكدها Relay، ويكمل إلى Server 3. |
-| فحص النهاية | Server 1 و2 و3 جميعاً `STORED`. |
-| فحص الحذف | ciphertext المحلي يُحذف فقط بعد تأكيد `STORED`؛ لم يوجد حذف plaintext مصدر. |
+| Start Server 1 and Server 2 with Storage unavailable | upload returns `502` and Server 1 state becomes `FAILED`. |
+| Inspect Server 1 | the final ciphertext file `.bin` still exists. |
+| Start Server 3 later | no manual intervention in chunks or metadata is required. |
+| Invoke the resume worker | returns the manifest, skips chunks confirmed by the Relay, and completes to Server 3. |
+| Final check | Server 1, 2, and 3 are all `STORED`. |
+| Deletion check | local ciphertext is deleted only after `STORED` confirmation; no source plaintext was deleted. |
 
-نجحت اختبارات التكامل الخمس بعد إضافة سيناريو التعافي.
+All five integration tests passed after adding the recovery scenario.
 
-## قائمة الاختبارات اليدوية المتبقية قبل الإنتاج
+## Remaining manual tests before production
 
-| السيناريو | السلوك المطلوب |
+| Scenario | Expected behavior |
 |---|---|
-| قطع الاتصال عند 10% و50% و90% | نفس transfer_id يستأنف من آخر index موثق. |
-| قتل عملية Server 1 أثناء التشفير | يبقى `.part` فقط؛ بعد timeout تنظف بدون حذف مصدر المستخدم. |
-| قتل Server 2 أثناء chunk | لا يسجل chunk verified حتى hash وfsync؛ يمكن إعادة الإرسال بأمان. |
-| قتل Server 3 بعد آخر chunk وقبل complete | chunks الدائمة موجودة، لكن لا `STORED` حتى full hash عند retry. |
-| تعطل SQLite | طلب النقل يفشل بشكل واضح ولا يعترف بنجاح غير محفوظ. |
+| Disconnect at 10%, 50%, and 90% | same `transfer_id` resumes from the last recorded index. |
+| Kill Server 1 process during encryption | only the `.part` remains; after timeout it is cleaned without deleting the user's source. |
+| Kill Server 2 during a chunk | a chunk is not recorded as verified until hash and `fsync`; it can be retransmitted safely. |
+| Kill Server 3 after the last chunk and before complete | permanent chunks are present, but no `STORED` until full hash on retry. |
+| SQLite failure | transfer request fails explicitly and does not acknowledge an unpersisted success. |
 
-> **قرار المتابعة:** لا يظهر مسار يؤدي إلى حذف نسخة قبل تأكيد الوجهة. تبدأ الآن جلسة تدقيق Data Loss الكاملة المنصوص عليها في القسم 8 من الدليل.
+> Decision to proceed: No path appears that leads to deletion of a copy before destination confirmation. A full Data Loss audit session as specified in Section 8 of the guide now begins.

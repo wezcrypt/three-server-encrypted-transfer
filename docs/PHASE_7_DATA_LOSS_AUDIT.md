@@ -1,40 +1,40 @@
-# تدقيق Data Loss — Phase 7
+# Data Loss Audit — Phase 7
 
-**نطاق المراجعة:** ترتيب الحالة، جميع عمليات الحذف، worker الاستعادة، والتدفقات من Server 1 إلى Server 3.
-**قاعدة المراجعة:** لم يُعدّل كود خلال الجلسة.
-**الحكم:** PASS؛ لا توجد نتائج CRITICAL أو HIGH أو MEDIUM مفتوحة في مسار فقدان البيانات.
+**Scope of the review:** state transitions, all deletion operations, worker recovery, and flows from Server 1 to Server 3.
+**Audit baseline:** No code changes were made during the session.
+**Verdict:** PASS; there are no CRITICAL, HIGH, or MEDIUM findings open in the data-loss path.
 
-## التسلسل الفعلي المراجع
+## Actual reviewed sequence
 
 > `Source → Encryption → ciphertext verification → Relay verification → Storage verification → STORED confirmation → temporary ciphertext deletion`
 
-تطبيق Server 1 لا يملك أمر حذف للـplaintext المصدر أساساً، لأن الملف يصل stream من العميل ولا ينشئ التطبيق نسخة plaintext محلية. لذلك لا يمكن لفشل الشبكة أو worker أن يحذف المصدر. ciphertext المؤقت في Server 1 لا يحذف إلا بعد رد Relay الصريح `200` و`status=STORED`، عقب تسجيل الحالة `STORED` محلياً.
+Server 1's application does not have a delete command for the source plaintext to begin with, because the file arrives as a stream from the client and the application does not create a local plaintext copy. Therefore a network failure or worker cannot delete the source. The temporary ciphertext on Server 1 is not deleted until it receives an explicit Relay response `200` and `status=STORED`, after the `STORED` state has been recorded locally.
 
-| عملية حذف | الشرط السابق | هل تمثل مصدر بيانات قابل للاسترجاع؟ | النتيجة |
+| Deletion operation | Precondition | Does it represent a recoverable data source? | Result |
 |---|---|---|---|
-| حذف `.part` عند فشل التشفير | لم يُعترف بالملف بعد وملف ciphertext النهائي غير موجود | لا؛ ملف جزئي غير موثوق فقط | PASS |
-| حذف ciphertext Server 1 | `status=STORED` من Relay والحالة المحلية انتقلت إلى STORED | Storage النهائي تحقق من full hash | PASS |
-| حذف Relay chunks | `status=STORED` من Server 3 بعد full hash | Server 3 يملك storage دائم | PASS |
-| حذف `.part` القديم | timeout 6 ساعات قابل للضبط | لا يطابق إلا ملفات جزئية؛ لا يمس `.bin` أو chunks verified | PASS |
-| حذف Storage chunks | لا يوجد مسار حذف في التطبيق | التخزين النهائي ثابت | PASS |
+| Deletion of `.part` on encryption failure | File not yet acknowledged and final ciphertext file does not exist | No; only an untrusted partial file | PASS |
+| Deletion of ciphertext on Server 1 | `status=STORED` from Relay and local state transitioned to STORED | Final storage verified the full hash | PASS |
+| Deletion of Relay chunks | `status=STORED` from Server 3 after full hash | Server 3 has durable storage | PASS |
+| Deletion of old `.part` | 6-hour configurable timeout | Matches only partial files; does not touch `.bin` or verified chunks | PASS |
+| Deletion of Storage chunks | No delete path in the application | Final storage is durable | PASS |
 
-## سيناريوهات الأعطال
+## Failure scenarios
 
-| السيناريو | النسخة المرجعية بعد الفشل | الاسترجاع | خطر حذف خاطئ |
+| Scenario | Reference copy after failure | Recovery | Risk of incorrect deletion |
 |---|---|---|---|
-| انقطاع عند 10% | المصدر عند العميل؛ Server 1 `.part` أو draft | يعاد الرفع؛ `.part` فقط تنظف بعد timeout | لا يوجد |
-| انقطاع عند 50% | ciphertext النهائي في Server 1 وchunks verified في Relay إن وجدت | Server 1 يستأنف من `nextChunk` | لا يوجد |
-| انقطاع عند 90% | ciphertext Server 1 + Relay verified chunks | idempotent chunk retry ثم full hash | لا يوجد |
-| Storage غير متاح | Server 1 ciphertext وRelay chunks | اختبار تكامل يثبت استئنافاً ناجحاً عند عودة Storage | لا يوجد |
-| Server 1 يتعطل بعد Storage تأكيد | ciphertext قد يبقى زيادةً (ليس فقداً) | retry idempotent يصل إلى STORED ثم يحذف ciphertext | لا يوجد |
-| Server 2 يتعطل بعد Storage تأكيد | Storage دائم موجود؛ Relay chunks قد تبقى زيادةً | retry يعيد تأكيد Storage ثم ينظف Relay | لا يوجد |
-| Server 3 يتعطل قبل complete | chunks النهائية موجودة لكن لا STORED | Relay يعيد manifest/chunks ثم complete | لا يوجد |
-| فشل hash | نسخة المصدر/ciphertext الموثقة تبقى؛ chunk التالف لا يسجل | إعادة النقل من آخر verified | لا يوجد |
-| worker يتعطل | لا يحدث حذف شامل؛ لا توجد عملية delete للـverified data | worker الدوري يبدأ عند الإقلاع | لا يوجد |
-| إعادة تشغيل الجهاز | SQLite WAL + files الدائمة تحفظ الحالة | start-up resume وleases | لا يوجد |
+| Interruption at 10% | Source at client; Server 1 `.part` or draft | Re-upload; `.part` only cleaned after timeout | None |
+| Interruption at 50% | Final ciphertext on Server 1 and chunks verified on Relay if present | Server 1 resumes from `nextChunk` | None |
+| Interruption at 90% | ciphertext on Server 1 + Relay verified chunks | Idempotent chunk retry then full hash | None |
+| Storage unavailable | Server 1 ciphertext and Relay chunks | Integrity test proves successful resume when Storage is back | None |
+| Server 1 crashes after Storage confirmation | ciphertext may remain as extra (not lost) | Idempotent retry reaches STORED then deletes ciphertext | None |
+| Server 2 crashes after Storage confirmation | Durable Storage exists; Relay chunks may remain as extra | Retry reconfirms Storage then cleans Relay | None |
+| Server 3 crashes before complete | Final chunks are present but no STORED | Relay retransmits manifest/chunks then complete | None |
+| Hash failure | Documented source/ciphertext copy remains; the corrupted chunk is not recorded | Retransmit from last verified | None |
+| Worker crash | No wholesale deletion occurs; there is no delete operation for verified data | Periodic worker starts on boot | None |
+| Machine reboot | SQLite WAL + persistent files preserve state | Start-up resume and leases | None |
 
-## مراجعة التزامن والذرات
+## Concurrency and atomicity review
 
-تسجل DB chunks في transaction بعد hash والكتابة و`fsync`، وتستخدم unique key `(transfer_id, chunk_index)`. يحمي lease مرحلة Relay→Storage من عمال متنافسين. الانتقالات المحظورة مثل `FAILED → STORED` ترفضها آلة الحالات. السلوك idempotent للـmanifest/chunk المتطابق يمنع الـretry من مضاعفة العداد أو استبدال البيانات.
+The DB records chunks in a transaction after hashing, writing, and `fsync`, and uses a unique key `(transfer_id, chunk_index)`. A lease protects the Relay→Storage stage from competing workers. Forbidden transitions like `FAILED → STORED` are rejected by the state machine. Idempotent behavior for identical manifest/chunk prevents retries from doubling counters or replacing data.
 
-> **قرار المراجعة:** التسلسل يحقق القاعدة الذهبية: لا يوجد حذف لنسخة معتبرة قبل تأكيد الوجهة. يمكن الانتقال إلى Phase 8.
+> **Review decision:** The sequence satisfies the golden rule: no deletion of a valid copy before destination confirmation. Proceed to Phase 8.

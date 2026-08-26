@@ -1,20 +1,20 @@
-# إدارة المفاتيح والتشفير
+# Key Management and Encryption
 
 ## Envelope Encryption
 
-لكل ملف، ينشئ Server 1 **DEK** عشوائياً بطول 32 بايت. يستخدمه فقط أثناء معالجة upload لتشفير كل chunk بخوارزمية AES-256-GCM. لا يكتب DEK في ملف ciphertext أو remote manifest أو log أو API response.
+For each file, Server 1 generates a random 32-byte **DEK**. It is used only during upload processing to encrypt each chunk using AES-256-GCM. The DEK is not written to the ciphertext file, remote manifest, log, or API response.
 
-| المادة | مكانها | من يستطيع الوصول | مدة الحياة |
+| Item | Location | Who can access | Lifetime |
 |---|---|---|---|
-| plaintext | stream/ذاكرة Server 1 فقط | عملية Server 1 | أثناء upload فقط؛ لا ينشأ plaintext temp file. |
-| DEK | ذاكرة Server 1 ثم مغلف | Server 1 فقط | يمسح buffer بعد العملية؛ يحتاج لفك تشفير مستقبلي مصرح. |
-| wrapped DEK | جدول `encryption_metadata` في DB Server 1 فقط | Server 1 وVault Transit بحسب policy | حتى سياسة الاحتفاظ بالملف. |
-| Master Key / Transit Key | Vault فقط في production | Vault؛ لا يخرج كـplaintext للتطبيق | تديره Vault. |
-| Vault Token | environment/secret manager لـServer 1 فقط | حساب خدمة Server 1 | قصير العمر قدر الإمكان؛ لا يسجل. |
+| plaintext | stream/memory of Server 1 only | Server 1 process | During upload only; no plaintext temp file is created. |
+| DEK | memory of Server 1 then wrapped | Server 1 only | buffer is wiped after operation; requires authorized future decryption. |
+| wrapped DEK | `encryption_metadata` table in Server 1 DB only | Server 1 and Vault Transit per policy | Until file retention policy. |
+| Master Key / Transit Key | Vault only in production | Vault; does not leave as plaintext to the application | Managed by Vault. |
+| Vault Token | environment/secret manager for Server 1 only | Server 1 service account | As short-lived as possible; not logged. |
 
-## وضع الإنتاج: Vault Transit
+## Production mode: Vault Transit
 
-يجب أن تكون القيم التالية موجودة في بيئة **Server 1 فقط**:
+The following values must be present in the environment of **Server 1 only**:
 
 ```bash
 RUNTIME_ENV=production
@@ -25,20 +25,20 @@ VAULT_TRANSIT_KEY=three-server-dek
 MTLS_CRL_PATH=/etc/three-server/ca.crl.pem
 ```
 
-يستدعي التطبيق `transit/encrypt/<key>` مع context مبني على `fileId`، ويخزن ciphertext الذي يعيده Vault باعتباره wrapped DEK. عند فك التشفير المستقبلي، يجب استعمال context نفسه. في حال عدم توفر Vault أو إرجاعه استجابة غير صالحة، يفشل التطبيق مغلقاً؛ لا يوجد fallback إلى environment master key.
+The application calls `transit/encrypt/<key>` with a context constructed from `fileId`, and stores the ciphertext returned by Vault as the wrapped DEK. For future decryption, the same context must be used. If Vault is unavailable or returns an invalid response, the application should fail closed; there is no fallback to an environment master key.
 
-### سياسة Vault الدنيا المقترحة
+### Suggested minimum Vault policy
 
 ```hcl
 path "transit/encrypt/three-server-dek" { capabilities = ["update"] }
 path "transit/decrypt/three-server-dek" { capabilities = ["update"] }
 ```
 
-خصص policy وtoken منفصلين لـServer 1، ولا تضع Vault address أو token أو policy في إعدادات Server 2/3. للحد من blast radius، لا تمنح API غير المشمولة بالإصدار صلاحية decrypt حتى تنفذ طبقة استرجاع بملكية وموافقة واضحة.
+Create a separate policy and token for Server 1, and do not place the Vault address, token, or policy in the settings of Server 2/3. To limit blast radius, do not grant decrypt capability to APIs not included in the release until you implement a recovery layer with explicit ownership and approval.
 
-## وضع التطوير فقط
+## Development-only mode
 
-يسمح `KEY_PROVIDER=development` بمفتاح base64 محلي للاختبارات:
+`KEY_PROVIDER=development` allows a local base64 key for testing:
 
 ```bash
 RUNTIME_ENV=development
@@ -47,8 +47,8 @@ DEV_KMS_KEY_VERSION=v2
 DEV_KMS_KEYS_JSON='{"v1":"<32-byte-base64>","v2":"<32-byte-base64>"}'
 ```
 
-إذا لم تستخدم `DEV_KMS_KEYS_JSON`، يقبل `MASTER_KEY_B64` لمفتاح واحد. يحظر التطبيق هذا المزوّد عندما `RUNTIME_ENV=production`.
+If you do not use `DEV_KMS_KEYS_JSON`, the application accepts `MASTER_KEY_B64` for a single key. The application forbids this provider when `RUNTIME_ENV=production`.
 
-## التدوير والإلغاء
+## Rotation and revocation
 
-Vault Transit يضمّن key version في wrapped ciphertext. قبل تدوير transit key، تأكد من بقاء decrypt للإصدارات القديمة بحسب سياسة Vault. دوّر Vault token والشهادات وCRL وفق حادثة أو جدول مؤسسي. في وضع التطوير، تدعم `DEV_KMS_KEYS_JSON` قراءة الإصدار السابق لاختبار migration، لكن لا تعد بديلاً عن Vault.
+Vault Transit includes the key version in the wrapped ciphertext. Before rotating the transit key, ensure decrypt for older versions remains available per Vault policy. Rotate Vault tokens, certificates, and CRLs according to incident or organizational schedule. In development mode, `DEV_KMS_KEYS_JSON` supports reading the previous version to test migrations, but it is not a substitute for Vault.

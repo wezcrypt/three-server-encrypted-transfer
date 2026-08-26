@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability report
+    url: https://github.com/wesam92991/three-server-encrypted-transfer/security
+    about: Do not disclose vulnerabilities publicly. Follow the private-reporting instructions in SECURITY.md.
+  - name: Documentation and usage guide
+    url: https://github.com/wesam92991/three-server-encrypted-transfer#documentation
+    about: Review the architecture, deployment, and security documentation before opening an issue.

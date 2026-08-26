@@ -1,20 +1,20 @@
 # Phase 9 — Security Test Suite
 
-**الحالة:** مكتملة. مجموعة الاختبارات الأمنية المنفذة تمر بالكامل.
+**Status:** Complete. The implemented security test suite passes in full.
 
-| مجال الاختبار | السيناريو | النتيجة |
+| Test area | Scenario | Result |
 |---|---|---|
-| Replay | إعادة manifest بنفس `transferId` مع ciphertext SHA-256 مختلف | PASS: Relay يعيد `409 TRANSFER_MANIFEST_CONFLICT`. |
-| عقدة غير مصرح بها | شهادة server3 تحاول استدعاء Relay الذي يقبل server1 فقط | PASS: استجابة `403`. |
-| path traversal | filename من `../../private/secret.txt` ومسار تخزين بـ`..` | PASS: الاسم يصبح metadata آمنة فقط، والمسار يرفض. |
-| حجم/شكل chunk | index سالب، hash غير سداسي، حجم يتجاوز الحد | PASS: مخطط التحقق يرفضها. |
-| سلامة ciphertext | تغيير بايت ciphertext أو AAD/index | PASS: GCM authentication يفشل. |
-| IV reuse | تشفير chunks متتالية تحت DEK واحد | PASS: IV مختلف لكل index. |
-| عزل المفاتيح | فحص e2e لقواعد بيانات العقد | PASS: wrapped DEK في Server 1 فقط. |
-| size limit | حد stream داخل التشفير، وليس header فقط | PASS بالتصميم ومغطى بمسار `UPLOAD_TOO_LARGE`. |
-| تسريب سجلات | redaction مركزي لمفاتيح/tokens/body/filename | PASS بالبحث الساكن ومراجعة إعداد logger. |
+| Replay | Resubmitting manifest with same `transferId` but different ciphertext SHA-256 | PASS: Relay returns `409 TRANSFER_MANIFEST_CONFLICT`. |
+| Unauthorized node | server3's certificate attempts to call Relay which accepts only server1 | PASS: `403` response. |
+| path traversal | filename of `../../private/secret.txt` and storage path containing `..` | PASS: filename reduced to safe metadata only, path rejected. |
+| chunk size/shape | negative index, non-hex hash, size exceeding limit | PASS: validation schema rejects them. |
+| ciphertext integrity | bit flip in ciphertext or AAD/index | PASS: GCM authentication fails. |
+| IV reuse | encrypting consecutive chunks under the same DEK | PASS: IV is unique per index. |
+| key isolation | e2e inspection of node databases | PASS: wrapped DEK present only on Server 1. |
+| size limit | stream limit enforced inside encryption, not only header | PASS by design and covered by `UPLOAD_TOO_LARGE` path. |
+| log leakage | central redaction of keys/tokens/body/filename | PASS via static analysis and logger config review. |
 
-## أوامر التحقق
+## Verification commands
 
 ```bash
 npm run lint
@@ -22,6 +22,6 @@ npm test
 npm run test:security
 ```
 
-آخر تنفيذ لـ`npm run test:security` حقق **3/3** نجاحات، وفحص الصياغة ناجح. تضم مجموعة المشروع حالياً اختبارات وحدة وتكامل وأمن تغطي المسار الأساسي، استئناف الوجهة، mTLS، تشفير AES-GCM، المراقبة، والتلاعب بالمدخلات.
+The most recent run of `npm run test:security` achieved **3/3** successes, and the lint check passed. The project test suite currently contains unit, integration, and security tests covering the happy path, resumable destinations, mTLS, AES-GCM encryption, observability, and input tampering.
 
-> **حدود يجب تنفيذها قبل الإنتاج:** يظل مطلوباً إجراء scan dependencies في بيئة CI المتصلة بالإنترنت، واختبار تحميل مع ملفات كبيرة/آلاف الاتصالات، واختبار شهادات ملغاة فعلياً باستخدام CRL إنتاجية. هذه متطلبات تشغيلية لا تغطيها شهادات التطوير المحلية.
+> Limitations that must be addressed before production: performing a dependency scan in an internet-connected CI environment, load testing with large files/thousands of connections, and validating certificate revocation in production using CRLs. These are operational requirements not covered by local development certificates.

@@ -1,32 +1,32 @@
 # Phase 8 — Monitoring, Logging, Health
 
-**الحالة:** مكتملة. تستخدم الخوادم سجلات JSON منظمة منقحة وواجهات صحة تمنع كشف secrets أو بيانات الملفات.
+**Status:** Complete. Servers use sanitized structured JSON logs and health endpoints that prevent exposure of secrets or file data.
 
-## السجلات المنظمة
+## Structured logs
 
-| العقدة | أحداث مسجلة | بيانات مستبعدة صراحةً |
+| Node | Events logged | Explicitly excluded data |
 |---|---|---|
-| Server 1 | نجاح النقل، فشل النقل، خطأ معالج الطلب | `authorization`، tokens، Master Key، Vault Token، wrapped DEK، filename، request body، stack/message. |
-| Server 2 | تأكيد Storage، فشل Relay→Storage، خطأ طلب | نفس القائمة، مع عدم وجود plaintext أو key provider في هذه العقدة. |
-| Server 3 | تأكيد التخزين، فشل التحقق النهائي، خطأ طلب | نفس القائمة، مع عدم وجود plaintext أو key provider في هذه العقدة. |
+| Server 1 | Transfer success, transfer failure, request handler error | `authorization`, tokens, Master Key, Vault Token, wrapped DEK, filename, request body, stack/message. |
+| Server 2 | Storage confirmation, Relay→Storage failure, request error | Same list, with no plaintext or key provider present on this node. |
+| Server 3 | Storage confirmation, final verification failure, request error | Same list, with no plaintext or key provider present on this node. |
 
-يسجل النظام `transferId` و`fileId` وأكواد أحداث ثابتة، وهي بيانات تشغيلية لازمة للتتبع ولا تحمل اسم المستخدم أو محتوى الملف. جميع الحقول الحساسة في logger تمر عبر قائمة redaction مركزية.
+The system logs `transferId` and `fileId` and fixed event codes, which are operational data necessary for tracing and do not contain the username or file contents. All sensitive fields in the logger are passed through a centralized redaction list.
 
-## واجهات الصحة
+## Health endpoints
 
-| Endpoint | الحماية | الحقول |
+| Endpoint | Protection | Fields |
 |---|---|---|
-| `GET /health` — Server 1 | Bearer token عندما يكون مهيأً؛ إلزامي في production | uptime، RSS، heap، CPU/load، RAM، disk، active/failed transfers. |
-| `GET /health` — Server 2 | mTLS وهوية server1 فقط | نفس حقول التشغيل، بلا metadata ملف. |
-| `GET /health` — Server 3 | mTLS وهوية server2 فقط | نفس حقول التشغيل، بلا metadata ملف. |
+| `GET /health` — Server 1 | Bearer token when configured; mandatory in production | uptime, RSS, heap, CPU/load, RAM, disk, active/failed transfers. |
+| `GET /health` — Server 2 | mTLS and identity limited to server1 only | Same operational fields, no file metadata. |
+| `GET /health` — Server 3 | mTLS and identity limited to server2 only | Same operational fields, no file metadata. |
 
-## التحقق
+## Verification
 
-| الاختبار | النتيجة |
+| Test | Result |
 |---|---|
-| فحص صياغة كامل | PASS |
-| جميع اختبارات الوحدة والتكامل | PASS: 12/12 في 26 أغسطس 2026. |
-| اختبار health snapshot | PASS؛ يحتوي مؤشرات النقل ولا يحتوي `wrappedDek` أو `filename`. |
-| مراجعة redaction | PASS؛ تتضمن authorization/cookie/body/keys/tokens/filename/error stack. |
+| Full linting check | PASS |
+| All unit and integration tests | PASS: 12/12 on 26 August 2026. |
+| Health snapshot test | PASS; contains transfer indicators and does not contain `wrappedDek` or `filename`. |
+| Redaction review | PASS; includes authorization/cookie/body/keys/tokens/filename/error stack. |
 
-> **قرار المتابعة:** لا تسجل هذه المرحلة محتوى plaintext أو credentials أو wrapped key. يمكن الانتقال إلى مجموعة الاختبارات الأمنية Phase 9.
+> **Decision to proceed:** This phase does not log plaintext content, credentials, or wrapped keys. Proceed to security test suite Phase 9.

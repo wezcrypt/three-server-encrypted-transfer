@@ -1,27 +1,27 @@
-# النشر والتشغيل
+# Deployment and Operation
 
-## متطلبات النشر
+## Deployment requirements
 
-انشر كل عقدة في VPS أو حساب خدمة منفصل. لا تشارك system users أو مسارات التخزين أو بيانات Vault بين Server 1 وServer 2 وServer 3. ثبّت Node.js 22.13.x عند تشغيل المصدر، أو استخدم binary المعبأ للمنصة المناسبة. يحتاج binary إلى certificate/key/CA/CRL ومسار تخزين قابل للكتابة؛ لا يحتاج Node.js للمسار المعبأ.
+Deploy each node on a separate VPS or service account. Do not share system users, storage paths, or Vault data between Server 1, Server 2, and Server 3. Install Node.js 22.13.x when running from source, or use the platform-packaged binary. The binary requires certificate/key/CA/CRL and a writable storage path; Node.js does not require the packaged path.
 
-| العقدة | المنفذ المقترح | ingress policy | secret محلي |
+| Node | Suggested port | ingress policy | local secret |
 |---|---:|---|---|
-| Server 1 | 8443 | العميل/Reverse proxy | Vault token فقط في production، upload token. |
-| Server 2 | 9443 | عناوين Server 1 فقط | private key وشهادة node فقط. |
-| Server 3 | 10443 | عناوين Server 2 فقط | private key وشهادة node فقط. |
+| Server 1 | 8443 | client/Reverse proxy | Vault token only in production; upload token. |
+| Server 2 | 9443 | Server 1 addresses only | private key and node certificate only. |
+| Server 3 | 10443 | Server 2 addresses only | private key and node certificate only. |
 
-## الشهادات
+## Certificates
 
-للتطوير فقط:
+For development only:
 
 ```bash
 npm install
 npm run certs:dev
 ```
 
-ينشئ الأمر CA وشهادات nodes تحت `config/certs`. لا تستخدمها في production. أصدر CA وشهادات production عبر PKI مؤسسية، وأمّن private key بـ`0600` في POSIX، وانشر CRL محدثة. يجب أن يحتوي config production على `tls.crlPath` لكل عقدة.
+The command creates a CA and node certificates under `config/certs`. Do not use them in production. Issue the CA and production certificates via your institutional PKI, secure private keys with POSIX mode `0600`, and publish an up-to-date CRL. The production config must contain `tls.crlPath` for each node.
 
-## استخدام تطبيق الربط
+## Using the connector application
 
 ### Linux
 
@@ -36,19 +36,19 @@ chmod +x three-server-connector-linux-x64
 .\three-server-connector-win-x64.exe
 ```
 
-تظهر الواجهة CLI التفاعلية مرتبةً حقول runtime ومسار CA/CRL، ثم العنوان والمنفذ والشهادة والمفتاح ومسار التخزين لكل من Server 1/2/3، ثم token وupload limit. عند الإنهاء، تتحقق من المسارات والقيم، وتنشئ ملفات node config مقيدة الصلاحية في workspace، وتشغل العقد الثلاث تلقائياً. في development ينشئ التطبيق DEK master development عشوائياً داخل بيئة العملية إذا لم يكن موجوداً. في production يجب تزويد Vault environment variables لـServer 1.
+The interactive CLI presents ordered runtime fields and the CA/CRL path, then the address, port, certificate, key, and storage path for each of Server 1/2/3, followed by token and upload limit. On completion, it validates paths and values, writes permission-restricted node config files into the workspace, and starts the three nodes automatically. In development the application generates a development master DEK randomly inside the process environment if one is not present. In production you must provide Vault environment variables for Server 1.
 
-لتهيئة غير تفاعلية:
+For noninteractive setup:
 
 ```bash
 ./three-server-connector-linux-x64 --generate connector.json
-# حرر connector.json بقيم حقيقية، مع عدم وضع Vault token فيه
+# Edit connector.json with real values; do not put the Vault token in it
 ./three-server-connector-linux-x64 --config connector.json
 ```
 
-## تشغيل المصدر مع systemd
+## Running the source with systemd
 
-عند توزيع source code على عقد منفصلة، أنشئ config JSON مستقلاً لكل عقدة ثم استخدم وحدة systemd مماثلة:
+When distributing the source code to separate nodes, create an independent JSON config for each node then use a similar systemd unit:
 
 ```ini
 [Unit]
@@ -74,18 +74,18 @@ ReadWritePaths=/var/lib/three-server1
 WantedBy=multi-user.target
 ```
 
-أنشئ وحدات منفصلة لـServer 2 وServer 3 مع `ExecStart` و`CONFIG_PATH` ومسار الخدمة المناسبين. لا تستخدم user root. إذا استخدمت nginx أمام Server 1، مرر HTTPS إلى Server 1 أو تأكد أن TLS بين nginx وServer 1 موثوق؛ لا تضع Server 2/3 خلف proxy عام.
+Create separate units for Server 2 and Server 3 with appropriate `ExecStart`, `CONFIG_PATH`, and service path. Do not use the root user. If you use nginx in front of Server 1, forward HTTPS to Server 1 or ensure that TLS between nginx and Server 1 is trusted; do not place Server 2/3 behind a public proxy.
 
-## checklist ما قبل الإنتاج
+## Pre-production checklist
 
-| الإجراء | مطلوب |
+| Action | Required |
 |---|---|
-| `KEY_PROVIDER=vault` وVault policy ضيقة في Server 1 | نعم |
-| غياب `MASTER_KEY_B64` و`DEV_KMS_KEYS_JSON` من production | نعم |
-| CRL production صحيحة ومختبرة بشهادة ملغاة | نعم |
-| private keys صلاحيتها 0600 ومملوكة لحساب الخدمة | نعم |
-| firewall يسمح فقط Server 1→2 وServer 2→3 | نعم |
-| volume منفصل ومشفّر لكل storage path | نعم |
-| backup مشفر لـSQLite وStorage Server 3 | نعم |
-| `npm test` و`npm run test:security` وdependency audit في CI | نعم |
-| اختبار تحميل وتعطل الشبكة في حجم الإنتاج | نعم |
+| `KEY_PROVIDER=vault` and a narrow Vault policy on Server 1 | Yes |
+| No `MASTER_KEY_B64` and `DEV_KMS_KEYS_JSON` in production | Yes |
+| Production CRL is correct and tested with a revoked certificate | Yes |
+| Private keys have mode 0600 and are owned by the service account | Yes |
+| Firewall allows only Server 1→2 and Server 2→3 | Yes |
+| Separate encrypted volume for each storage path | Yes |
+| Encrypted backup for SQLite and Storage Server 3 | Yes |
+| `npm test` and `npm run test:security` and dependency audit in CI | Yes |
+| Load and network-failure testing at production scale | Yes |

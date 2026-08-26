@@ -1,40 +1,40 @@
-# Phase 3 — إعداد mTLS والهوية
+# Phase 3 — Setting up mTLS and Identity
 
-**حالة البناء:** مكتملة.
-**الخطوة التالية:** جلسة تدقيق مركزة للقسم 5 من الدليل، قبل بناء APIs الخوادم.
+**Build status:** Complete.
+**Next step:** Focused audit session for Section 5 of the guide, before building the server APIs.
 
-## التنفيذ
+## Implementation
 
-| البند | التنفيذ | الضابط |
+| Item | Implementation | Constraint |
 |---|---|---|
-| CA داخلية | سكربت تطوير يولد CA RSA-4096 وشهادات RSA-3072 منفصلة لـserver1/server2/server3 | المفاتيح الخاصة تكتب بصلاحية `0600`، ولا تُدرج أي شهادة أو مفتاح في الكود. |
-| استخدام الشهادات | كل شهادة تملك `serverAuth` و`clientAuth`، وSAN خاصاً بهوية العقدة | يمكن لكل عقدة أن تكون TLS server وTLS client ضمن مسار mTLS. |
-| مصافحة mTLS | `requestCert: true` و`rejectUnauthorized: true` على الخادم والعميل | اتصال بلا شهادة موثوقة يُرفض قبل API handler. |
-| حد TLS | TLS 1.3 كحد أدنى | لا يوجد fallback إلى TLS أقدم. |
-| التحقق التطبيقي | تتحقق `verifyRequestPeer` و`verifyResponsePeer` من socket authorization ومن CN/SAN للهوية المتوقعة | شهادة صحيحة لـnode آخر لا تخول استدعاء endpoint دور مختلف. |
-| عميل داخلي | `mtlsRequest` يقبل HTTPS فقط ويتحقق من هوية الخادم بعد المصافحة | يمنع خطأ توجيه Relay/Storage إلى endpoint غير متوقع. |
+| Internal CA | Development script generates an RSA-4096 CA and separate RSA-3072 certificates for `server1`/`server2`/`server3` | Private keys are written with permission `0600`, and no certificate or key is checked into code. |
+| Certificate usage | Each certificate has `serverAuth` and `clientAuth`, and an SAN specific to the node identity | Each node can act as a TLS server and a TLS client within the mTLS path. |
+| mTLS handshake | `requestCert: true` and `rejectUnauthorized: true` on server and client | A connection without a trusted certificate is rejected before the API handler. |
+| TLS boundary | TLS 1.3 as a minimum | No fallback to older TLS versions. |
+| Application-level verification | `verifyRequestPeer` and `verifyResponsePeer` check socket authorization and CN/SAN for the expected identity | A valid certificate for one node does not authorize calling an endpoint that requires a different role. |
+| Internal client | `mtlsRequest` accepts HTTPS only and verifies the server identity after the handshake | Prevents misrouting Relay/Storage to an unexpected endpoint. |
 
-## اختبارات منفذة
+## Executed tests
 
-| الاختبار | الحالة | النتيجة |
+| Test | Status | Result |
 |---|---|---|
-| Client server1 موثق إلى server2 مع تحقق server2 من server1 | PASS | استجابة 200 وidentity=`server1`. |
-| Client يتوقع server3 لكنه يتصل بشهادة server2 | PASS | العميل يرفض الاستجابة لاختلاف الهوية. |
-| فحص صياغة المصدر | PASS | `npm run lint`. |
+| Client `server1` authenticated to `server2` with `server2` verifying `server1` | PASS | 200 response and identity=`server1`. |
+| Client expects `server3` but connects to a server presenting `server2`'s certificate | PASS | Client rejects the response due to identity mismatch. |
+| Source linting check | PASS | `npm run lint`. |
 
-## قائمة اختبارات يدوية
+## Manual test checklist
 
-| الاختبار | الإجراء | النتيجة المقبولة |
+| Test | Action | Expected result |
 |---|---|---|
-| عميل بلا شهادة | استدعاء منفذ Server 2 بـTLS عادي | فشل المصافحة. |
-| شهادة CA أخرى | تقديم شهادة client صدرتها CA غير موثوقة | فشل المصافحة. |
-| شهادة server3 على endpoint يستدعيه server1 | محاولة نداء API Server 2 من شهادة server3 | رفض HTTP 403 بسبب `MTLS_IDENTITY_MISMATCH`. |
-| شهادة منتهية | استبدال شهادة node بشهادة منتهية | فشل المصافحة. |
-| إعداد إنتاجي ناقص | حذف ca أو cert أو key | فشل الإقلاع بأمان قبل فتح المنفذ. |
+| Client without certificate | Call Server 2's port with plain TLS (no client cert) | Handshake failure. |
+| Certificate from another CA | Present a client certificate issued by an untrusted CA | Handshake failure. |
+| `server3` certificate on endpoint invoked by `server1` | Attempt to call API Server 2 using `server3`'s certificate | HTTP 403 rejected due to `MTLS_IDENTITY_MISMATCH`. |
+| Expired certificate | Replace a node's certificate with an expired certificate | Handshake failure. |
+| Incomplete production setup | Remove `ca` or `cert` or `key` | Fail to boot safely before opening the port. |
 
-> **حدود الإصدار:** سكربت الشهادات مخصص للتطوير والاختبارات فقط. الإنتاج يتطلب CA داخلية مُدارة، وسياسة إصدار وتجديد وإلغاء شهادات موثقة في `DEPLOYMENT.md`.
+> **Release limitations:** The certificate script is intended for development and testing only. Production requires a managed internal CA and a documented certificate issuance, renewal, and revocation policy in `DEPLOYMENT.md`.
 
-## مراجع
+## References
 
 [1] [Node.js TLS API](https://nodejs.org/api/tls.html)
 [2] [OWASP TLS Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html)

@@ -1,8 +1,8 @@
-# Dependencies and build caches / الاعتماديات وذاكرة البناء
+# Dependencies and build cache
 node_modules/
 .pkg-cache/
 
-# Runtime data and generated configuration / بيانات التشغيل والإعدادات المولدة
+# Runtime data and generated configuration
 data/
 three-server-runtime/
 *.sqlite
@@ -12,7 +12,7 @@ three-server-runtime/
 *.db-shm
 *.db-wal
 
-# Certificates, keys, tokens, and local secrets / الشهادات والمفاتيح والرموز والأسرار المحلية
+# Certificates, keys, tokens, and local secrets
 config/certs/
 *.key
 *.key.pem
@@ -26,12 +26,12 @@ config/certs/
 .env.*
 !.env.example
 
-# Generated binaries and archives / الملفات التنفيذية والأرشيفات المولدة
+# Generated binaries and archives
 dist/
 *.zip
 *.tar.gz
 
-# Logs and temporary artifacts / السجلات والملفات المؤقتة
+# Logs and temporary artifacts
 *.log
 *.part
 coverage/

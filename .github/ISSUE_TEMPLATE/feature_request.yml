@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an improvement with its operational and security impact.
+title: "[Feature]: "
+labels: [enhancement, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for proposing an improvement. Please avoid sharing secrets or sensitive deployment information.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Explain the practical problem or limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Describe the desired behavior and user-facing outcome.
+    validations:
+      required: true
+  - type: dropdown
+    id: security_impact
+    attributes:
+      label: Expected security impact
+      description: Identify whether the change affects a trust boundary or security control.
+      options:
+        - No expected security impact
+        - Affects upload authentication
+        - Affects encryption or key management
+        - Affects mTLS or certificate handling
+        - Affects storage, deletion, or recovery
+        - Affects logging or observability
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: List any workarounds or alternative designs.

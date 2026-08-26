@@ -1,57 +1,57 @@
-# تدقيق مركز — التشفير وإدارة المفاتيح
+# Central Audit — Cryptography and Key Management
 
-**نطاق المراجعة:** `shared/crypto.js` و`shared/key-provider.js` و`shared/validation.js` ومواضع تخزين metadata في `shared/database.js`.
-**قاعدة المراجعة:** لم يُعدّل أي كود أثناء هذه المراجعة.
-**النتيجة المؤقتة:** لا توجد ملاحظة CRITICAL أو HIGH؛ توجد ملاحظة MEDIUM واحدة يجب إصلاحها قبل استمرار البناء.
+**Scope of review:** `shared/crypto.js` and `shared/key-provider.js` and `shared/validation.js` and metadata storage locations in `shared/database.js`.
+**Review basis:** No code was modified during this review.
+**Interim result:** No CRITICAL or HIGH findings; one MEDIUM finding must be fixed before the build continues.
 
-## ملخص النتائج
+## Summary of Findings
 
-| المجال | النتيجة | الملاحظات |
+| Area | Result | Notes |
 |---|---|---|
-| AES-256-GCM | PASS | يستخدم `createCipheriv` و`createDecipheriv` من Node.js مع `authTagLength=16`. |
-| DEK العشوائي | PASS | يُنشأ DEK بطول 32 بايت من مصدر عشوائي تشفيري. |
-| IV/nonce | PASS | prefix عشوائي فريد لكل ملف/DEK مقترن بـchunk index؛ يرفض index خارج مجال 32 بت. |
-| AAD | PASS | يربط ciphertext بـfile ID وtransfer ID وترتيب chunk وطول plaintext. |
-| authentication tags | PASS | فك التشفير لا ينجح قبل `decipher.final()` بعد تعيين tag وAAD. |
-| فصل المفتاح عن العقد البعيدة | PASS تصميمياً | الحقل `wrappedDek` لا يُضمّن في `remoteTransferManifestSchema`، والتخزين البعيد سيستخدم `includeWrappedDek=false`. |
-| Vault | PASS تصميمياً | الإنتاج يرفض بوضوح أي مزود غير Vault. |
-| تدوير مفتاح تطويري | MEDIUM | المزوّد التطويري يربط فك التغليف حصراً بالإصدار الحالي ولا يملك خريطة مفاتيح إصدار قديم. |
+| AES-256-GCM | PASS | Uses Node.js `createCipheriv` and `createDecipheriv` with `authTagLength=16`. |
+| DEK randomness | PASS | DEK is generated as 32 bytes from a cryptographic random source. |
+| IV/nonce | PASS | Unique random prefix per file/DEK combined with chunk index; rejects index outside 32-bit range. |
+| AAD | PASS | Binds ciphertext to file ID and transfer ID and chunk index and plaintext length. |
+| authentication tags | PASS | Decryption does not succeed prior to `decipher.final()` after setting the tag and AAD. |
+| Key separation from remote nodes | PASS by design | The `wrappedDek` field is not included in `remoteTransferManifestSchema`, and remote storage will use `includeWrappedDek=false`. |
+| Vault | PASS by design | Production explicitly rejects any provider other than Vault. |
+| Developer key rotation | MEDIUM | The development provider ties unwrap exclusively to the current version and lacks a map of older-version keys. |
 
-## النتائج الحرجة والعالية
+## Critical and High Findings
 
-لا توجد نتائج Critical أو High في نطاق المراجعة الحالي.
+There are no Critical or High findings within the current review scope.
 
-## النتائج المتوسطة
+## Medium Findings
 
-1. **[MEDIUM] مزود التطوير لا يتيح قراءة ملفات ملفوفة بإصدار Development Key سابق.**
+1. **[MEDIUM] Development provider does not allow reading wrapped files using a previous Development Key version.**
 
-   | البند | التحليل |
+   | Item | Analysis |
    |---|---|
-   | الموقع | `shared/key-provider.js`، الدالة `DevelopmentKeyProvider.unwrapDek`. |
-   | المشكلة | تُرفض قيمة `wrappedDek` ما لم تطابق `DEV_KMS_KEY_VERSION` الحالي. بعد تدوير مفتاح تطوير، تفشل قراءة ملفات الإصدار السابق حتى لو ظل مفتاحه متاحاً بشكل مقصود. |
-   | الأثر | قد يمنع اختبار الاسترجاع أو التعافي لملفات تطوير قديمة، ويضعف تحقق key-versioning في الاختبارات. لا يؤثر في نمط الإنتاج الذي يستخدم Vault Transit بإصدار ضمن ciphertext. |
-   | سيناريو الاستغلال | ليس مسار كشف بيانات؛ إنه فقدان إمكانية قراءة موضعي عند تغيير إعداد تطوير من دون إبقاء المفتاح القديم. |
-   | الإصلاح المطلوب | قبول خريطة مفاتيح تطوير صريحة `DEV_KMS_KEYS_JSON` بصيغة version→base64، مع استعمال الإصدار المضمّن في wrapped DEK، وحظرها في الإنتاج. |
+   | Location | `shared/key-provider.js`, function `DevelopmentKeyProvider.unwrapDek`. |
+   | Problem | The `wrappedDek` value is rejected unless it matches the current `DEV_KMS_KEY_VERSION`. After rotating the development key, reading files from the previous version fails even if that key remains intentionally available. |
+   | Impact | May prevent recovery or retrieval testing of older development files, and weakens key-versioning verification in tests. Does not affect the production pattern that uses Vault Transit with a version embedded in ciphertext. |
+   | Exploit scenario | Not a data disclosure path; it's a loss of readability for contexts when changing development settings without retaining the old key. |
+   | Fix required | Accept an explicit development keys map `DEV_KMS_KEYS_JSON` in the form version→base64, use the version embedded in the wrapped DEK, and disallow this in production. |
 
-## تحقق سلبي من التسريبات
+## Passive leak verification
 
-فحص البحث الساكن رصد وجود أسماء `MASTER_KEY_B64` و`VAULT_TOKEN` و`wrappedDek` في كود الإدارة المشروع فقط، ولم يجد أي استدعاء `console.log` أو logger يطبع هذه القيم، أو أي تعطيل لـmTLS. لا توجد بعد طبقة سجلات تشغيلية؛ ستفحص عند Phase 8.
+Static search detected the names `MASTER_KEY_B64`, `VAULT_TOKEN`, and `wrappedDek` only in the project's admin code, and did not find any `console.log` or logger calls printing these values, nor any disabling of mTLS. There is not yet an operational logging layer; it will be examined in Phase 8.
 
-## قرار المعالجة
+## Remediation decision
 
-> تُعالج الملاحظة المتوسطة الآن قبل الانتقال إلى Phase 3. لا توجد ثغرة تصنف CRITICAL أو HIGH توقف التقدم، لكن تنفيذ الإصلاح مطلوب لإغلاق تعهد key versioning الوارد في الدليل.
+> The medium finding will be addressed now before moving to Phase 3. There is no CRITICAL or HIGH vulnerability blocking progress, but implementing the fix is required to close the key versioning promise described in the guide.
 
-## مراجع
+## References
 
 [1] [NIST SP 800-38D: GCM/GMAC](https://csrc.nist.gov/pubs/sp/800/38/d/final)
 [2] [Vault Transit: key rotation and ciphertext versions](https://developer.hashicorp.com/vault/docs/secrets/transit)
 
-## إغلاق الملاحظة بعد المراجعة
+## Closing the finding after review
 
-بعد توثيق النتيجة، عُدّل مزوّد التطوير فقط ليقبل `DEV_KMS_KEYS_JSON`، وهي خريطة version→مفتاح base64، ويختار المفتاح وفق الإصدار المغلف. لا يغيّر هذا السلوك حظر مزود التطوير في الإنتاج. أُضيف اختبار `development provider unwraps an older configured key version`، وأصبح كامل اختبار الوحدات **PASS (6/6)**.
+After documenting the finding, only the development provider was modified to accept `DEV_KMS_KEYS_JSON`, which is a version→base64 key map, and selects the key according to the wrapped version. This does not change the prohibition of the development provider in production. Added test `development provider unwraps an older configured key version`, and the full unit test suite is now **PASS (6/6)**.
 
-| رقم النتيجة | الحالة بعد الإصلاح | التحقق |
+| Finding ID | Status after fix | Verification |
 |---|---|---|
-| MEDIUM-1 | CLOSED | تشغيل `npm run lint && npm test` بنجاح في 26 أغسطس 2026. |
+| MEDIUM-1 | CLOSED | Ran `npm run lint && npm test` successfully on 26 August 2026. |
 
-> **حكم نقطة التدقيق:** PASS. لا توجد نتائج CRITICAL أو HIGH أو MEDIUM مفتوحة ضمن التشفير وإدارة المفاتيح، ويمكن الانتقال إلى Phase 3.
+> **Audit verdict:** PASS. There are no open CRITICAL, HIGH, or MEDIUM findings within Cryptography and Key Management, and you may proceed to Phase 3.
