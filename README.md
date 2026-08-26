@@ -10,6 +10,15 @@
 
 A security-focused reference implementation for resilient file transfer across three isolated services. Use the language buttons above to switch between the complete English and Arabic project guides.
 
+## Download Connector
+
+Choose your operating system to download the ready-to-run Connector directly. No build or command is required to download it.
+
+[![Download for Windows](https://img.shields.io/badge/Download-Windows%20EXE-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/download/v1.0.0/three-server-connector-win-x64.exe)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux%20x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/download/v1.0.0/three-server-connector-linux-x64)
+
+The download page also includes SHA-256 checksums for integrity verification and the full release notes.
+
 ```text
 Client  ── HTTPS + Bearer ──>  Server 1: Upload  ── mTLS ──>  Server 2: Relay  ── mTLS ──>  Server 3: Storage
                                       │                                           │                           │

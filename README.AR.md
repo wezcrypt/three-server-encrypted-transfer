@@ -3,7 +3,16 @@
 [![English](https://img.shields.io/badge/Language-English-2563eb)](README.md)
 [![العربية](https://img.shields.io/badge/اللغة-العربية-0f766e)](README.AR.md)
 
-تنفيذ مرجعي يركز على الأمان لنقل ملفات مرن عبر ثلاث خدمات معزولة:
+تنفيذ مرجعي يركز على الأمان لنقل ملفات مرن عبر ثلاث خدمات معزولة.
+
+## تحميل Connector
+
+اختر نظام التشغيل لتنزيل تطبيق Connector الجاهز مباشرةً. لا تحتاج إلى بناء التطبيق أو كتابة أي أمر كي تحمّله.
+
+[![تنزيل Windows](https://img.shields.io/badge/تنزيل-Windows%20EXE-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/download/v1.0.0/three-server-connector-win-x64.exe)
+[![تنزيل Linux](https://img.shields.io/badge/تنزيل-Linux%20x64-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/wezcrypt/three-server-encrypted-transfer/releases/download/v1.0.0/three-server-connector-linux-x64)
+
+تتضمن صفحة الإصدار أيضاً ملف بصمات SHA-256 للتحقق من سلامة الملفات وملاحظات الإصدار الكاملة.
 
 ```text
 العميل  ── HTTPS + Bearer ──>  Server 1: Upload  ── mTLS ──>  Server 2: Relay  ── mTLS ──>  Server 3: Storage
