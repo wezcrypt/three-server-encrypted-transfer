@@ -246,7 +246,11 @@ async function buildWindows() {
     
     packageTarget('node22-win-x64', output);
     
-    await applyWindowsVersionMetadata(output);
+    if (process.env.CONNECTOR_EDIT_WINDOWS_METADATA === '1') {
+      await applyWindowsVersionMetadata(output);
+    } else {
+      process.stdout.write('Skipping optional Windows version-resource metadata. Set CONNECTOR_EDIT_WINDOWS_METADATA=1 to enable it.\n');
+    }
     
   } finally {
     
