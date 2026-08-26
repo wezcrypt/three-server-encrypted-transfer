@@ -212,4 +212,5 @@ jobs:
           fi
 
       - name: Print release assets
-        run: gh release view "$RELEASE_TAG" --json url,assets --jq '{url, assets: [.assets[] | {name, size, digest}]}'
+        run: |
+          gh release view "$RELEASE_TAG" --json url,assets --jq '{url, assets: [.assets[] | {name, size, digest}]}'
